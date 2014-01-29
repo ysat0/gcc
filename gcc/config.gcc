@@ -1054,10 +1054,16 @@ moxie-*-rtems*)
 h8300-*-rtems*)
 	tmake_file="h8300/t-h8300 t-rtems h8300/t-rtems"
 	tm_file="h8300/h8300.h dbxelf.h elfos.h h8300/elf.h h8300/rtems.h rtems.h newlib-stdint.h"
+	extra_options="${extra_options} h8300/elf.opt"
 	;;
 h8300-*-elf*)
 	tmake_file="h8300/t-h8300"
 	tm_file="h8300/h8300.h dbxelf.h elfos.h newlib-stdint.h h8300/elf.h"
+	extra_options="${extra_options} h8300/elf.opt"
+	;;
+h8300-*-linux*)
+	tmake_file="h8300/t-h8300 h8300/t-linux"
+	tm_file="h8300/linux.h dbxelf.h elfos.h h8300/elf.h"
 	;;
 hppa*64*-*-linux*)
 	target_cpu_default="MASK_PA_11|MASK_PA_20"
