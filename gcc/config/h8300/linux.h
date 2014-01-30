@@ -560,11 +560,7 @@ struct cum_arg
    for the index in the tablejump instruction.  */
 #define CASE_VECTOR_MODE Pmode
 
-/* Define this as 1 if `char' should by default be signed; else as 0.
-
-   On the H8/300, sign extension is expensive, so we'll say that chars
-   are unsigned.  */
-#define DEFAULT_SIGNED_CHAR 0
+#define DEFAULT_SIGNED_CHAR 1
 
 /* This flag, if defined, says the same insns that convert to a signed fixnum
    also convert validly to an unsigned one.  */

@@ -33,9 +33,6 @@ along with GCC; see the file COPYING3.  If not see
 			%{pg:gcrti.o%s}%{!pg:crti.o%s} \
 			crtbegin.o%s"
 
-#undef USER_LABEL_PREFIX
-#define USER_LABEL_PREFIX "_"
-
 #define JUMP_TABLES_IN_TEXT_SECTION (flag_pic)
 
 #undef LINK_SPEC
