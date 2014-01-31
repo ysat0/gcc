@@ -467,7 +467,7 @@ LABEL_DEF(umodsi3)
 	mov	S1,A1
 	bra	reti
 #else
-	bsr	LABRL(udivsi3)
+	bsr	LABEL(udivsi3)
 	mov.l	er3,er0
 	rts
 #endif
