@@ -644,3 +644,15 @@ typedef unsigned int CUMULATIVE_ARGS;
       (LENGTH) = rx_adjust_insn_length ((INSN), (LENGTH));	\
     }								\
   while (0)
+
+/* Position Independent Code.  */
+
+/* We can't directly access anything that contains a symbol,
+   nor can we indirect via the constant pool.  */
+int rx_legitimate_pic_operand_p(rtx x);
+#define LEGITIMATE_PIC_OPERAND_P(X)				\
+  rx_legitimate_pic_operand_p (X)
+
+#define SYMBOLIC_CONST_P(X)	\
+((GET_CODE (X) == SYMBOL_REF || GET_CODE (X) == LABEL_REF)	\
+  && nonpic_symbol_mentioned_p (X))

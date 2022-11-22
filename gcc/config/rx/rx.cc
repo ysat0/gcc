@@ -143,11 +143,16 @@ rx_pid_data_operand (rtx op)
   return PID_NOT_PID;
 }
 
+rtx
+legitimize_pic_address (rtx orig, machine_mode mode ATTRIBUTE_UNUSED, rtx reg);
+
 static rtx
-rx_legitimize_address (rtx x,
-		       rtx oldx ATTRIBUTE_UNUSED,
+rx_legitimize_address (rtx x, rtx oldx ,
 		       machine_mode mode ATTRIBUTE_UNUSED)
 {
+  if (flag_pic)
+    return legitimize_pic_address (oldx, mode, NULL_RTX);
+
   if (rx_pid_data_operand (x) == PID_UNENCODED)
     {
       rtx rv = gen_pid_addr (gen_rtx_REG (SImode, rx_pid_base_regnum ()), x);
@@ -269,6 +274,71 @@ rx_is_legitimate_address (machine_mode mode, rtx x,
 
   /* Small data area accesses turn into register relative offsets.  */
   return rx_small_data_operand (x);
+}
+
+/* Return TRUE if X references a SYMBOL_REF or LABEL_REF whose symbol
+   isn't protected by a PIC unspec.  */
+bool
+nonpic_symbol_mentioned_p (rtx x)
+{
+  if (GET_CODE (x) == SYMBOL_REF || GET_CODE (x) == LABEL_REF
+      || GET_CODE (x) == PC)
+    return true;
+
+  /* We don't want to look into the possible MEM location of a
+     CONST_DOUBLE, since we're not going to use it, in general.  */
+  if (GET_CODE (x) == CONST_DOUBLE)
+    return false;
+
+  if (GET_CODE (x) == UNSPEC
+      && (XINT (x, 1) == UNSPEC_PIC
+	  || XINT (x, 1) == UNSPEC_GOT
+	  || XINT (x, 1) == UNSPEC_GOTOFF
+	  || XINT (x, 1) == UNSPEC_GOTPLT
+	  || XINT (x, 1) == UNSPEC_PLT
+	  || XINT (x, 1) == UNSPEC_PCREL))
+    return false;
+
+  const char* fmt = GET_RTX_FORMAT (GET_CODE (x));
+  for (int i = GET_RTX_LENGTH (GET_CODE (x)) - 1; i >= 0; i--)
+    {
+      if (fmt[i] == 'E')
+	{
+	  for (int j = XVECLEN (x, i) - 1; j >= 0; j--)
+	    if (nonpic_symbol_mentioned_p (XVECEXP (x, i, j)))
+	      return true;
+	}
+      else if (fmt[i] == 'e' && nonpic_symbol_mentioned_p (XEXP (x, i)))
+	return true;
+    }
+
+  return false;
+}
+
+/* Convert a non-PIC address in `orig' to a PIC address using @GOT or
+   @GOTOFF in `reg'.  */
+rtx
+legitimize_pic_address (rtx orig, machine_mode mode ATTRIBUTE_UNUSED, rtx reg)
+{
+  if (GET_CODE (orig) == LABEL_REF || GET_CODE (orig) == SYMBOL_REF)
+    {
+      if (reg == NULL_RTX)
+	reg = gen_reg_rtx (Pmode);
+
+      emit_insn (gen_symGOTOFF2reg (reg, orig));
+      crtl->uses_pic_offset_table = 1;
+      return reg;
+    }
+  else if (GET_CODE (orig) == SYMBOL_REF)
+    {
+      if (reg == NULL_RTX)
+	reg = gen_reg_rtx (Pmode);
+
+      emit_insn (gen_symGOT2reg (reg, orig));
+      crtl->uses_pic_offset_table = 1;
+      return reg;
+    }
+  return orig;
 }
 
 /* Returns TRUE for simple memory addresses, ie ones
@@ -460,7 +530,20 @@ rx_print_operand_address (FILE * file, machine_mode /*mode*/, rtx addr)
       break;
 
     case UNSPEC:
-      addr = XVECEXP (addr, 0, 0);
+      {
+	int post = XINT (addr, 1);
+	addr = XVECEXP (addr, 0, 0);
+	switch (post)
+	  {
+	  case UNSPEC_GOTOFF:
+	    fprintf (file, "#");
+	    output_addr_const (file, addr);
+	    fprintf (file, "@GOTOFF");
+	    crtl->uses_pic_offset_table = 1;
+	    printf("%s %p %d\n", __func__, &(crtl->uses_pic_offset_table), crtl->uses_pic_offset_table);
+	    return;
+	  }
+      }
       /* Fall through.  */
     case LABEL_REF:
     case SYMBOL_REF:
@@ -933,6 +1016,47 @@ rx_print_operand (FILE * file, rtx op, int letter)
     }
 }
 
+/* Implement TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA.  */
+static bool
+rx_asm_output_addr_const_extra (FILE *file, rtx x)
+{
+  if (GET_CODE (x) == UNSPEC)
+    {
+      switch (XINT (x, 1))
+	{
+	case UNSPEC_PIC:
+	  /* GLOBAL_OFFSET_TABLE or local symbols, no suffix.  */
+	  output_addr_const (file, XVECEXP (x, 0, 0));
+	  break;
+	case UNSPEC_GOT:
+	  output_addr_const (file, XVECEXP (x, 0, 0));
+	  fputs ("@GOT", file);
+	  break;
+	case UNSPEC_GOTOFF:
+	  output_addr_const (file, XVECEXP (x, 0, 0));
+	  fputs ("@GOTOFF", file);
+	  break;
+	case UNSPEC_PLT:
+	  output_addr_const (file, XVECEXP (x, 0, 0));
+	  fputs ("@PLT", file);
+	  break;
+	case UNSPEC_GOTPLT:
+	  output_addr_const (file, XVECEXP (x, 0, 0));
+	  fputs ("@GOTPLT", file);
+	  break;
+	case UNSPEC_PCREL:
+	  output_addr_const (file, XVECEXP (x, 0, 0));
+	  fputs ("@PCREL", file);
+	  break;
+	default:
+	  return false;
+	}
+      return true;
+    }
+  else
+    return false;
+}
+
 /* Maybe convert an operand into its PID format.  */
 
 rtx
@@ -968,6 +1092,7 @@ rx_gen_move_template (rtx * operands, bool is_movu)
   rtx          dest = operands[0];
   rtx          src  = operands[1];
 
+  printf("%s\n", __func__);
   /* Decide which extension, if any, should be given to the move instruction.  */
   switch (CONST_INT_P (src) ? GET_MODE (dest) : GET_MODE (src))
     {
@@ -1496,7 +1621,8 @@ rx_get_stack_layout (unsigned int * lowest,
 		 they can be used in the fast interrupt handler without
 		 saving them on the stack.  */
 	      || (is_fast_interrupt_func (NULL_TREE)
-		  && ! IN_RANGE (reg, 10, 13))))
+		  && ! IN_RANGE (reg, 10, 13)))
+	      || (flag_pic && reg == PIC_REGNUM))
 	{
 	  if (low == 0)
 	    low = reg;
@@ -1767,6 +1893,9 @@ rx_expand_prologue (void)
   else if (low)
     push_regs (high, low);
 
+  //  if (flag_pic && df_regs_ever_live_p (PIC_REGNUM))
+  //    emit_insn (gen_GOTaddr2picreg (const0_rtx));
+
   if (MUST_SAVE_ACC_REGISTER)
     {
       unsigned int acc_high, acc_low;
@@ -1846,6 +1975,10 @@ rx_expand_prologue (void)
       else
 	gen_safe_add (stack_pointer_rtx, frame_pointer_rtx, NULL_RTX,
 		      false /* False because the epilogue will use the FP not the SP.  */);
+    }
+  if (crtl->uses_pic_offset_table)
+    {
+      emit_insn (gen_loadGOT (gen_rtx_REG (SImode, PIC_REG)));
     }
 }
 
@@ -2955,7 +3088,9 @@ rx_is_legitimate_constant (machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 	  return true;
 
 	case UNSPEC:
-	  return XINT (x, 1) == UNSPEC_CONST || XINT (x, 1) == UNSPEC_PID_ADDR;
+	  return XINT (x, 1) == UNSPEC_CONST ||
+	         XINT (x, 1) == UNSPEC_PID_ADDR ||
+	         XINT (x, 1) == UNSPEC_GOTOFF;
 
 	default:
 	  /* FIXME: Can this ever happen ?  */
@@ -3648,6 +3783,20 @@ rx_modes_tieable_p (machine_mode mode1, machine_mode mode2)
 	  == (GET_MODE_CLASS (mode2) == MODE_FLOAT
 	      || GET_MODE_CLASS (mode2) == MODE_COMPLEX_FLOAT));
 }
+
+int rx_legitimate_pic_operand_p(rtx x)
+{
+  return ((! nonpic_symbol_mentioned_p (x)
+	   && (GET_CODE (x) != SYMBOL_REF
+	      || ! CONSTANT_POOL_ADDRESS_P (x)
+	       || ! nonpic_symbol_mentioned_p (get_pool_constant (x)))));
+}
+
+static void
+rx_asm_final_postscan_insn (FILE *, rtx_insn *insn, rtx operands[], int num_rtx)
+{
+  return;
+}
 
 #undef  TARGET_NARROW_VOLATILE_BITFIELD
 #define TARGET_NARROW_VOLATILE_BITFIELD		rx_narrow_volatile_bitfield
@@ -3807,6 +3956,13 @@ rx_modes_tieable_p (machine_mode mode1, machine_mode mode2)
 #undef  TARGET_HAVE_SPECULATION_SAFE_VALUE
 #define TARGET_HAVE_SPECULATION_SAFE_VALUE speculation_safe_value_not_needed
 
+#undef TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA
+#define TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA rx_asm_output_addr_const_extra
+
+#undef TARGET_ASM_FINAL_POSTSCAN_INSN
+#define TARGET_ASM_FINAL_POSTSCAN_INSN rx_asm_final_postscan_insn
+
 struct gcc_target targetm = TARGET_INITIALIZER;
 
 #include "gt-rx.h"
+

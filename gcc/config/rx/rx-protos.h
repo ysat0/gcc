@@ -171,4 +171,6 @@ rx_find_use_of_reg (rtx reg, rtx_insn* insn, F stepfunc)
 
 #endif
 
+bool nonpic_symbol_mentioned_p (rtx x);
+
 #endif /* GCC_RX_PROTOS_H */

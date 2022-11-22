@@ -76,6 +76,15 @@
 
    (UNSPEC_PID_ADDR	   52)
 
+   (UNSPEC_PIC		   60)
+   (UNSPEC_GOT		   61)
+   (UNSPEC_GOTOFF	   62)
+   (UNSPEC_PLT		   63)
+   (UNSPEC_GOTPLT	   64)
+   (UNSPEC_PCREL	   65)
+   (UNSPEC_SYMOFF          66)
+   (UNSPEC_PCREL_SYMOFF    67)
+
    (CTRLREG_PSW		    0)
    (CTRLREG_PC		    1)
    (CTRLREG_USP		    2)
@@ -85,7 +94,9 @@
    (CTRLREG_ISP		   10)
    (CTRLREG_FINTV	   11)
    (CTRLREG_INTB	   12)
-  ]
+
+   (PIC_REG		   13)
+]
 )
 
 (define_attr "length" "" (const_int 8))
@@ -739,7 +750,7 @@
      (clobber (reg:CC CC_REG))])]
   ""
 {
-  /* Make sure that we have an integer comparison...  */
+/* Make sure that we have an integer comparison...  */
   if (GET_MODE (XEXP (operands[1], 0)) != CCmode
       && GET_MODE (XEXP (operands[1], 0)) != SImode)
     FAIL;
@@ -2872,4 +2883,118 @@
   { return rx_gen_move_template (operands, false); }
   [(set_attr "length" "16")
    (set_attr "timings" "22")]
+)
+
+;; PIC stuff
+
+(define_expand "sym_label2reg"
+  [(set (match_operand:SI 0 "" "")
+	(const:SI (unspec:SI [(match_operand:SI 1 "" "")
+			      (const (plus:SI (match_operand:SI 2 "" "")
+					      (const_int 2)))]
+			     UNSPEC_SYMOFF)))]
+  ""
+  "")
+
+(define_expand "symPCREL_label2reg"
+  [(set (match_operand:SI 0 "" "")
+	(const:SI
+	 (unspec:SI
+	  [(const:SI (unspec:SI [(match_operand:SI 1 "" "")] UNSPEC_PCREL))
+	   (const:SI (plus:SI (match_operand:SI 2 "" "")
+			      (const_int 2)))] UNSPEC_PCREL_SYMOFF)))]
+  ""
+  "")
+
+(define_expand "sym2GOT"
+  [(const (unspec [(match_operand 0 "" "")] UNSPEC_GOT))]
+  ""
+  "")
+
+(define_expand "symGOT2reg"
+  [(match_operand 0 "" "") (match_operand 1 "" "")]
+  ""
+{
+  gen_sym2GOT (operands[1]);
+
+  DONE;
+})
+
+(define_expand "symGOTPLT2reg"
+  [(match_operand 0 "" "") (match_operand 1 "" "")]
+  ""
+{
+  rtx pltsym = gen_rtx_CONST (Pmode,
+			      gen_rtx_UNSPEC (Pmode,
+					      gen_rtvec (1, operands[1]),
+					      UNSPEC_GOTPLT));
+  DONE;
+})
+
+(define_expand "sym2GOTOFF"
+  [(const (unspec [(match_operand 0 "" "")] UNSPEC_GOTOFF))]
+  ""
+  "")
+
+(define_insn "mov_from_rirb"
+  [(match_operand 0 "" "") (match_operand 1 "" "")]
+  ""
+{
+  return "mov.l\t[%0,%1],%0";
+}
+)
+
+(define_expand "symGOTOFF2reg"
+  [(match_operand 0 "" "") (match_operand 1 "" "")]
+  ""
+{
+  rtx gotoffsym;
+  rtx t = (!can_create_pseudo_p ()
+	   ? operands[0]
+	   : gen_reg_rtx (GET_MODE (operands[0])));
+
+  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
+
+  gotoffsym = gen_sym2GOTOFF (operands[1]);
+  emit_move_insn (t, gotoffsym);
+  emit_move_insn (operands[0], t);
+  emit_insn(gen_mov_from_rirb(operands[0], picreg));
+//  set_unique_reg_note (insn, REG_EQUAL, operands[1]);
+  DONE;
+})
+
+(define_expand "symPLT_label2reg"
+  [(set (match_operand:SI 0 "" "")
+	(const:SI
+	 (unspec:SI
+	  [(const:SI (unspec:SI [(match_operand:SI 1 "" "")] UNSPEC_PLT))
+	   (const:SI (plus:SI (match_operand:SI 2 "" "")
+			      (const_int 2)))] UNSPEC_PCREL_SYMOFF)))
+   ;; Even though the PIC register is not really used by the call
+   ;; sequence in which this is expanded, the PLT code assumes the PIC
+   ;; register is set, so we must not skip its initialization.  Since
+   ;; we only use this expand as part of calling sequences, and never
+   ;; to take the address of a function, this is the best point to
+   ;; insert the (use).  Using the PLT to take the address of a
+   ;; function would be wrong, not only because the PLT entry could
+   ;; then be called from a function that doesn't initialize the PIC
+   ;; register to the proper GOT, but also because pointers to the
+   ;; same function might not compare equal, should they be set by
+   ;; different shared libraries.
+   (use (reg:SI PIC_REG))]
+  ""
+  "")
+
+(define_expand "sym2PIC"
+  [(const (unspec [(match_operand:SI 0 "" "")] UNSPEC_PIC))]
+  ""
+  "")
+
+(define_insn "loadGOT"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+	(unspec:SI [(const_int 0)] UNSPEC_GOT))]
+  ""
+{
+  return "mvfc\tpc,%0\n\tadd\t#_GLOBAL_OFFSET_TABLE_,%0";
+}
 )
