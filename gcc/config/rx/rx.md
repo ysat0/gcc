@@ -470,7 +470,10 @@
 
     if (! rx_call_operand (dest, Pmode))
       dest = force_reg (Pmode, dest);
-    emit_call_insn (gen_call_value_internal (operands[0], dest));
+    if (!flag_pic || !(GET_CODE (dest) == SYMBOL_REF && !SYMBOL_REF_LOCAL_P (dest)))
+        emit_call_insn (gen_call_value_internal (operands[0], dest));
+    else
+        emit_call_insn (gen_call_value_pcrel (operands[0], dest));
     DONE;
   }
 )
@@ -2998,3 +3001,25 @@
   return "mvfc\tpc,%0\n\tadd\t#_GLOBAL_OFFSET_TABLE_,%0";
 }
 )
+
+(define_expand "call_value_pcrel"
+  [(set (match_operand                  0 "register_operand" "=r,r")
+	(call (mem:QI (match_operand:SI 1 "rx_call_operand"   "r,CALL_OP_SYMBOL_REF"))
+	      (const_int 0)))
+   (clobber (reg:CC CC_REG))]
+  ""
+{
+  rtx gotoffsym;
+  rtx t = (!can_create_pseudo_p ()
+	   ? operands[0]
+	   : gen_reg_rtx (GET_MODE (operands[0])));
+
+  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
+
+  gotoffsym = gen_sym2GOTOFF (operands[1]);
+  emit_move_insn (t, gotoffsym);
+  emit_move_insn (operands[0], t);
+  emit_insn(gen_mov_from_rirb(operands[0], picreg));
+  emit_call_insn (gen_call_internal (operands[0]));
+  DONE;
+})
