@@ -540,7 +540,6 @@ rx_print_operand_address (FILE * file, machine_mode /*mode*/, rtx addr)
 	    output_addr_const (file, addr);
 	    fprintf (file, "@GOTOFF");
 	    crtl->uses_pic_offset_table = 1;
-	    printf("%s %p %d\n", __func__, &(crtl->uses_pic_offset_table), crtl->uses_pic_offset_table);
 	    return;
 	  }
       }
@@ -599,7 +598,8 @@ rx_assemble_integer (rtx x, unsigned int size, int is_aligned)
      %P  Register used for PID addressing
      %Q  If the operand is a MEM, then correctly generate
          register indirect or register relative addressing.
-     %R  Like %Q but for zero-extending loads.  */
+     %R  Like %Q but for zero-extending loads. 
+     %T  symbol@PLT  */
 
 static void
 rx_print_operand (FILE * file, rtx op, int letter)
@@ -886,6 +886,20 @@ rx_print_operand (FILE * file, rtx op, int letter)
 	    }
 	  break;
 	}
+    case 'T':
+      /* Print an operand and @PLT.  */
+      if (MEM_P (op))
+	op = XEXP (op, 0);
+
+      switch (GET_CODE (op))
+	{
+	case LABEL_REF:
+	case SYMBOL_REF:
+	  output_addr_const (file, op);
+	  fprintf (file, "@PLT");
+	  break;
+	}
+      break;
 
       /* Fall through.  */
 
@@ -1092,7 +1106,6 @@ rx_gen_move_template (rtx * operands, bool is_movu)
   rtx          dest = operands[0];
   rtx          src  = operands[1];
 
-  printf("%s\n", __func__);
   /* Decide which extension, if any, should be given to the move instruction.  */
   switch (CONST_INT_P (src) ? GET_MODE (dest) : GET_MODE (src))
     {
@@ -2483,6 +2496,7 @@ rx_select_section (tree decl,
 
   return default_elf_select_section (decl, reloc, align);
 }
+
 
 enum rx_builtin
 {
@@ -3090,7 +3104,8 @@ rx_is_legitimate_constant (machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 	case UNSPEC:
 	  return XINT (x, 1) == UNSPEC_CONST ||
 	         XINT (x, 1) == UNSPEC_PID_ADDR ||
-	         XINT (x, 1) == UNSPEC_GOTOFF;
+	         XINT (x, 1) == UNSPEC_GOTOFF ||
+	         XINT (x, 1) == UNSPEC_PLT;
 
 	default:
 	  /* FIXME: Can this ever happen ?  */

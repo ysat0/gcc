@@ -172,5 +172,6 @@ rx_find_use_of_reg (rtx reg, rtx_insn* insn, F stepfunc)
 #endif
 
 bool nonpic_symbol_mentioned_p (rtx x);
+void rx_expand_sym_label2reg (rtx reg, rtx sym, rtx lab, bool sibcall_p);
 
 #endif /* GCC_RX_PROTOS_H */
