@@ -465,15 +465,26 @@
 	(call (match_operand:QI 1 "general_operand")
 	      (match_operand:SI 2 "general_operand")))]
   ""
-  {
-    rtx dest = XEXP (operands[1], 0);
+{
+  rtx dest = XEXP (operands[1], 0);
 
-    if (! rx_call_operand (dest, Pmode))
-      dest = force_reg (Pmode, dest);
-    emit_call_insn (gen_call_value_internal (operands[0], dest));
-    DONE;
-  }
-)
+  if (flag_pic &&
+      (GET_CODE (dest) == SYMBOL_REF) && (!SYMBOL_REF_LOCAL_P (dest)))
+    {
+      if (flag_plt)
+        emit_call_insn (gen_call_value_internal_plt (operands[0], dest));
+      else
+        emit_call_insn (gen_call_value_internal_got (operands[0], dest));
+      DONE;
+    }
+  else
+    {
+      if (! rx_call_operand (dest, Pmode))
+        dest = force_reg (Pmode, dest);
+      emit_call_insn (gen_call_value_internal (operands[0], dest));
+    }
+  DONE;
+})
 
 (define_insn "call_value_internal"
   [(set (match_operand                  0 "register_operand" "=r,r")
@@ -2885,27 +2896,6 @@
    (set_attr "timings" "22")]
 )
 
-;; PIC stuff
-
-(define_expand "sym_label2reg"
-  [(set (match_operand:SI 0 "" "")
-	(const:SI (unspec:SI [(match_operand:SI 1 "" "")
-			      (const (plus:SI (match_operand:SI 2 "" "")
-					      (const_int 2)))]
-			     UNSPEC_SYMOFF)))]
-  ""
-  "")
-
-(define_expand "symPCREL_label2reg"
-  [(set (match_operand:SI 0 "" "")
-	(const:SI
-	 (unspec:SI
-	  [(const:SI (unspec:SI [(match_operand:SI 1 "" "")] UNSPEC_PCREL))
-	   (const:SI (plus:SI (match_operand:SI 2 "" "")
-			      (const_int 2)))] UNSPEC_PCREL_SYMOFF)))]
-  ""
-  "")
-
 (define_expand "sym2GOT"
   [(const (unspec [(match_operand 0 "" "")] UNSPEC_GOT))]
   ""
@@ -2920,29 +2910,10 @@
   DONE;
 })
 
-(define_expand "symGOTPLT2reg"
-  [(match_operand 0 "" "") (match_operand 1 "" "")]
-  ""
-{
-  rtx pltsym = gen_rtx_CONST (Pmode,
-			      gen_rtx_UNSPEC (Pmode,
-					      gen_rtvec (1, operands[1]),
-					      UNSPEC_GOTPLT));
-  DONE;
-})
-
 (define_expand "sym2GOTOFF"
   [(const (unspec [(match_operand 0 "" "")] UNSPEC_GOTOFF))]
   ""
   "")
-
-(define_insn "mov_from_rirb"
-  [(match_operand 0 "" "") (match_operand 1 "" "")]
-  ""
-{
-  return "mov.l\t[%0,%1],%0";
-}
-)
 
 (define_expand "symGOTOFF2reg"
   [(match_operand 0 "" "") (match_operand 1 "" "")]
@@ -2950,8 +2921,8 @@
 {
   rtx gotoffsym;
   rtx t = (!can_create_pseudo_p ()
-	   ? operands[0]
-	   : gen_reg_rtx (GET_MODE (operands[0])));
+          ? operands[0]
+          : gen_reg_rtx (GET_MODE (operands[0])));
 
   rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
 
@@ -2963,38 +2934,51 @@
   DONE;
 })
 
-(define_expand "symPLT_label2reg"
-  [(set (match_operand:SI 0 "" "")
-	(const:SI
-	 (unspec:SI
-	  [(const:SI (unspec:SI [(match_operand:SI 1 "" "")] UNSPEC_PLT))
-	   (const:SI (plus:SI (match_operand:SI 2 "" "")
-			      (const_int 2)))] UNSPEC_PCREL_SYMOFF)))
-   ;; Even though the PIC register is not really used by the call
-   ;; sequence in which this is expanded, the PLT code assumes the PIC
-   ;; register is set, so we must not skip its initialization.  Since
-   ;; we only use this expand as part of calling sequences, and never
-   ;; to take the address of a function, this is the best point to
-   ;; insert the (use).  Using the PLT to take the address of a
-   ;; function would be wrong, not only because the PLT entry could
-   ;; then be called from a function that doesn't initialize the PIC
-   ;; register to the proper GOT, but also because pointers to the
-   ;; same function might not compare equal, should they be set by
-   ;; different shared libraries.
-   (use (reg:SI PIC_REG))]
+(define_insn "mov_from_rirb"
+  [(match_operand 0 "register_operand" "r") (match_operand 1 "register_operand" "r")]
   ""
-  "")
-
-(define_expand "sym2PIC"
-  [(const (unspec [(match_operand:SI 0 "" "")] UNSPEC_PIC))]
-  ""
-  "")
+{
+  return "mov.l\t[%0,%1],%0";
+})
 
 (define_insn "loadGOT"
   [(set (match_operand:SI 0 "register_operand" "=r")
-	(unspec:SI [(const_int 0)] UNSPEC_GOT))]
+       (unspec:SI [(const_int 0)] UNSPEC_GOT))]
   ""
 {
   return "mvfc\tpc,%0\n\tadd\t#_GLOBAL_OFFSET_TABLE_,%0";
-}
+})
+
+(define_expand "call_value_internal_got"
+  [(set (match_operand                  0 "register_operand" "=r,r")
+       (call (mem:QI (match_operand:SI 1 "rx_call_operand"   "r,CALL_OP_SYMBOL_REF"))
+             (const_int 0)))
+   (clobber (reg:CC CC_REG))]
+  ""
+{
+  rtx gotoffsym;
+  rtx t = (!can_create_pseudo_p ()
+          ? operands[0]
+          : gen_reg_rtx (GET_MODE (operands[0])));
+
+  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
+
+  gotoffsym = gen_sym2GOTOFF (operands[1]);
+  emit_move_insn (t, gotoffsym);
+  emit_move_insn (operands[0], t);
+  emit_insn(gen_mov_from_rirb(operands[0], picreg));
+  emit_call_insn (gen_call_internal (operands[0]));
+  DONE;
+})
+
+(define_insn "call_value_internal_plt"
+  [(set (match_operand                  0 "register_operand" "=r")
+	(call (mem:QI (match_operand:SI 1 "rx_symbolic_call_operand" ""))
+	      (const_int 0)))
+   (use (reg:SI PIC_REG))
+   (clobber (reg:CC CC_REG))]
+  ""
+  "bsr\t%A1@PLT"
+  [(set_attr "length" "4")
+   (set_attr "timings" "33")]
 )
