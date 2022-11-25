@@ -460,39 +460,31 @@
    (set_attr "timings" "33")]
 )
 
-(define_expand "call_site"
-  [(unspec [(match_dup 0)] 0)]
-  ""
-{
-  static HOST_WIDE_INT i = 0;
-  operands[0] = GEN_INT (i);
-  i++;
-})
-
 (define_expand "call_value"
   [(set (match_operand          0 "register_operand")
 	(call (match_operand:QI 1 "general_operand")
 	      (match_operand:SI 2 "general_operand")))]
   ""
-  {
-    rtx dest = XEXP (operands[1], 0);
+{
+  rtx dest = XEXP (operands[1], 0);
 
-    if (! rx_call_operand (dest, Pmode))
-      dest = force_reg (Pmode, dest);
-    if (1 || !flag_pic || !(GET_CODE (dest) == SYMBOL_REF && !SYMBOL_REF_LOCAL_P (dest)))
-        emit_call_insn (gen_call_value_internal (operands[0], dest));
-    else
-      {
-	if (TARGET_JSR)
-          emit_call_insn (gen_call_value_got (operands[0], dest));
-	else {
-	  printf("%s\n", __func__);
-	  emit_call_insn (gen_call_value_plt (dest));
-	}
-      }
-    DONE;
-  }
-)
+  if (flag_pic &&
+      (GET_CODE (dest) == SYMBOL_REF) && (!SYMBOL_REF_LOCAL_P (dest)))
+    {
+      if (flag_plt)
+        emit_call_insn (gen_call_value_internal_plt (operands[0], dest));
+      else
+        emit_call_insn (gen_call_value_internal_got (operands[0], dest));
+      DONE;
+    }
+  else
+    {
+      if (! rx_call_operand (dest, Pmode))
+        dest = force_reg (Pmode, dest);
+      emit_call_insn (gen_call_value_internal (operands[0], dest));
+    }
+  DONE;
+})
 
 (define_insn "call_value_internal"
   [(set (match_operand                  0 "register_operand" "=r,r")
@@ -2924,45 +2916,73 @@
   ""
   "")
 
-(define_insn "mov_from_rirb"
-  [(match_operand 0 "" "") (match_operand 1 "" "")]
-  ""
-{
-  return "mov.l\t[%0,%1],%0";
-}
-)
-
 (define_expand "symGOTOFF2reg"
   [(match_operand 0 "" "") (match_operand 1 "" "")]
   ""
 {
   rtx gotoffsym;
   rtx t = (!can_create_pseudo_p ()
-	   ? operands[0]
-	   : gen_reg_rtx (GET_MODE (operands[0])));
+          ? operands[0]
+          : gen_reg_rtx (GET_MODE (operands[0])));
+
+  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
+
+  gotoffsym = gen_sym2GOTOFF (operands[1]);
+  emit_insn (gen_mov_from_got(t, picreg, gotoffsym));
+  emit_move_insn (operands[0], t);
+  //emit_insn(gen_mov_from_rirb(operands[0], picreg));
+//  set_unique_reg_note (insn, REG_EQUAL, operands[1]);
+  DONE;
+})
+
+(define_insn "mov_from_got"
+  [(match_operand 0 "register_operand" "r")
+        (match_operand 1 "register_operand" "r")
+        (match_operand 2 "" "g")]
+  ""
+  "mov.l\t%A2[%1],%0"
+)
+
+(define_insn "loadGOT"
+  [(set (match_operand:SI 0 "register_operand" "=r")
+       (unspec:SI [(const_int 0)] UNSPEC_GOT))]
+  ""
+{
+  return "mvfc\tpc,%0\n\tadd\t#_GLOBAL_OFFSET_TABLE_,%0";
+})
+
+(define_expand "call_value_internal_got"
+  [(set (match_operand                  0 "register_operand" "=r,r")
+       (call (mem:QI (match_operand:SI 1 "rx_call_operand"   "r,CALL_OP_SYMBOL_REF"))
+             (const_int 0)))
+   (clobber (reg:CC CC_REG))]
+  ""
+{
+  rtx gotoffsym;
+  rtx t = (!can_create_pseudo_p ()
+          ? operands[0]
+          : gen_reg_rtx (GET_MODE (operands[0])));
 
   rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
 
   gotoffsym = gen_sym2GOTOFF (operands[1]);
   emit_move_insn (t, gotoffsym);
+  emit_insn (gen_mov_from_got(t, picreg, gotoffsym));
   emit_move_insn (operands[0], t);
-  emit_insn(gen_mov_from_rirb(operands[0], picreg));
-//  set_unique_reg_note (insn, REG_EQUAL, operands[1]);
+  emit_call_insn (gen_call_internal (operands[0]));
   DONE;
 })
 
-(define_expand "sym2PIC"
-  [(const (unspec [(match_operand:SI 0 "" "")] UNSPEC_PIC))]
+(define_insn "call_value_internal_plt"
+  [(set (match_operand                  0 "register_operand" "=r")
+	(call (mem:QI (match_operand:SI 1 "rx_symbolic_call_operand" ""))
+	      (const_int 0)))
+   (use (reg:SI PIC_REG))
+   (clobber (reg:CC CC_REG))]
   ""
-  "")
-
-(define_insn "loadGOT"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-	(unspec:SI [(const_int 0)] UNSPEC_GOT))]
-  ""
-{
-  return "mvfc\tpc,%0\n\tadd\t#_GLOBAL_OFFSET_TABLE_,%0";
-}
+  "bsr\t%A1@PLT"
+  [(set_attr "length" "4")
+   (set_attr "timings" "33")]
 )
 
 (define_expand "call_value_got"
@@ -2981,8 +3001,8 @@
 
   gotoffsym = gen_sym2GOTOFF (operands[1]);
   emit_move_insn (t, gotoffsym);
+  emit_insn (gen_mov_from_got(t, picreg, gotoffsym));
   emit_move_insn (operands[0], t);
-  emit_insn(gen_mov_from_rirb(operands[0], picreg));
   emit_call_insn (gen_call_internal (operands[0]));
   DONE;
 })

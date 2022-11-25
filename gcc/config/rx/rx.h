@@ -650,7 +650,7 @@ typedef unsigned int CUMULATIVE_ARGS;
 /* We can't directly access anything that contains a symbol,
    nor can we indirect via the constant pool.  */
 int rx_legitimate_pic_operand_p(rtx x);
-#define LEGITIMATE_PIC_OPERAND_P(X)				\
+#define LEGITIMATE_PIC_OPERAND_P(X)		\
   rx_legitimate_pic_operand_p (X)
 
 #define SYMBOLIC_CONST_P(X)	\
