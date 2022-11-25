@@ -2927,19 +2927,20 @@
   rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
 
   gotoffsym = gen_sym2GOTOFF (operands[1]);
-  emit_move_insn (t, gotoffsym);
+  emit_insn (gen_mov_from_got(t, picreg, gotoffsym));
   emit_move_insn (operands[0], t);
-  emit_insn(gen_mov_from_rirb(operands[0], picreg));
+  //emit_insn(gen_mov_from_rirb(operands[0], picreg));
 //  set_unique_reg_note (insn, REG_EQUAL, operands[1]);
   DONE;
 })
 
-(define_insn "mov_from_rirb"
-  [(match_operand 0 "register_operand" "r") (match_operand 1 "register_operand" "r")]
+(define_insn "mov_from_got"
+  [(match_operand 0 "register_operand" "r")
+        (match_operand 1 "register_operand" "r")
+        (match_operand 2 "" "g")]
   ""
-{
-  return "mov.l\t[%0,%1],%0";
-})
+  "mov.l\t%A2[%1],%0"
+)
 
 (define_insn "loadGOT"
   [(set (match_operand:SI 0 "register_operand" "=r")
@@ -2965,8 +2966,8 @@
 
   gotoffsym = gen_sym2GOTOFF (operands[1]);
   emit_move_insn (t, gotoffsym);
+  emit_insn (gen_mov_from_got(t, picreg, gotoffsym));
   emit_move_insn (operands[0], t);
-  emit_insn(gen_mov_from_rirb(operands[0], picreg));
   emit_call_insn (gen_call_internal (operands[0]));
   DONE;
 })

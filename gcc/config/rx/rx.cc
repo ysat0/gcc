@@ -534,7 +534,6 @@ rx_print_operand_address (FILE * file, machine_mode /*mode*/, rtx addr)
 	switch (post)
 	  {
 	  case UNSPEC_GOTOFF:
-	    fprintf (file, "#");
 	    output_addr_const (file, addr);
 	    fprintf (file, "@GOTOFF");
 	    return;
