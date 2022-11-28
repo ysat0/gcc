@@ -174,5 +174,6 @@ rx_find_use_of_reg (rtx reg, rtx_insn* insn, F stepfunc)
 bool nonpic_symbol_mentioned_p (rtx x);
 rtx legitimize_pic_address (rtx orig,
 			    machine_mode mode ATTRIBUTE_UNUSED, rtx reg);
+rtx rx_get_fdpic_reg_initial_val (void);
 
 #endif /* GCC_RX_PROTOS_H */

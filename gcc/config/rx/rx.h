@@ -72,6 +72,12 @@
 	builtin_define ("__RX_ALLOW_STRING_INSNS__"); \
       else					\
 	builtin_define ("__RX_DISALLOW_STRING_INSNS__");\
+						\
+      if (TARGET_FDPIC)				\
+	{					\
+	  builtin_define ("__FDPIC__");		\
+	  builtin_define ("__RX_FDPIC__");	\
+	}					\
     }                                           \
   while (0)
 
@@ -106,6 +112,7 @@
 %{mint-register=*} \
 %{mgcc-abi:-mgcc-abi} %{!mgcc-abi:-mrx-abi} \
 %{mcpu=*} \
+%{mfdpic:--fdpic} \
 "
 
 #undef  LIB_SPEC

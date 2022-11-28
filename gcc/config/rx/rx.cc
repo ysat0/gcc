@@ -171,12 +171,33 @@ rx_legitimize_address (rtx x,
 rtx
 legitimize_pic_address (rtx orig, machine_mode mode ATTRIBUTE_UNUSED, rtx reg)
 {
-  if (GET_CODE (orig) == LABEL_REF || GET_CODE (orig) == SYMBOL_REF)
+  if (flag_plt && (GET_CODE (orig) == LABEL_REF ||
+		   (GET_CODE (orig) == SYMBOL_REF &&
+		    !SYMBOL_REF_LOCAL_P (orig))))
     {
       if (reg == NULL_RTX)
        reg = gen_reg_rtx (Pmode);
 
-      emit_insn (gen_symGOTOFF2reg (reg, orig));
+      if (TARGET_FDPIC
+	  && GET_CODE (orig) == SYMBOL_REF && SYMBOL_REF_FUNCTION_P (orig))
+	{
+	  /* Weak functions may be NULL which doesn't work with
+	     GOTOFFFUNCDESC because the runtime offset is not known.  */
+	  if (SYMBOL_REF_WEAK (orig))
+	    emit_insn (gen_symGOTFUNCDESC2reg (reg, orig));
+	  else
+	    emit_insn (gen_symGOTOFFFUNCDESC2reg (reg, orig));
+	}
+      else if (TARGET_FDPIC
+	       && (GET_CODE (orig) == LABEL_REF
+		   || (GET_CODE (orig) == SYMBOL_REF && SYMBOL_REF_DECL (orig)
+		       && (TREE_READONLY (SYMBOL_REF_DECL (orig))
+			   || SYMBOL_REF_EXTERNAL_P (orig)
+			   || DECL_SECTION_NAME(SYMBOL_REF_DECL (orig))))))
+	/* In FDPIC, GOTOFF can only be used for writable data.  */
+	emit_insn (gen_symGOT2reg (reg, orig));
+      else
+	emit_insn (gen_symGOTOFF2reg (reg, orig));
       crtl->uses_pic_offset_table = 1;
       return reg;
     }
@@ -185,7 +206,11 @@ legitimize_pic_address (rtx orig, machine_mode mode ATTRIBUTE_UNUSED, rtx reg)
       if (reg == NULL_RTX)
        reg = gen_reg_rtx (Pmode);
 
-      emit_insn (gen_symGOT2reg (reg, orig));
+      if (TARGET_FDPIC &&
+	  SYMBOL_REF_FUNCTION_P (orig) && SYMBOL_REF_EXTERNAL_P(orig))
+	emit_insn (gen_symGOTFUNCDESC2reg (reg, orig));
+      else
+	emit_insn (gen_symGOT2reg (reg, orig));
       crtl->uses_pic_offset_table = 1;
       return reg;
     }
@@ -318,9 +343,9 @@ nonpic_symbol_mentioned_p (rtx x)
       && (XINT (x, 1) == UNSPEC_PIC
 	  || XINT (x, 1) == UNSPEC_GOT
 	  || XINT (x, 1) == UNSPEC_GOTOFF
-	  || XINT (x, 1) == UNSPEC_GOTPLT
 	  || XINT (x, 1) == UNSPEC_PLT
-	  || XINT (x, 1) == UNSPEC_PCREL))
+	  || XINT (x, 1) == UNSPEC_GOTFUNCDESC
+	  || XINT (x, 1) == UNSPEC_GOTOFFFUNCDESC))
     return false;
 
   const char* fmt = GET_RTX_FORMAT (GET_CODE (x));
@@ -530,12 +555,24 @@ rx_print_operand_address (FILE * file, machine_mode /*mode*/, rtx addr)
     case UNSPEC:
       {
 	int post = XINT (addr, 1);
+	const char *attr = NULL;
 	addr = XVECEXP (addr, 0, 0);
 	switch (post)
 	  {
-	  case UNSPEC_GOTOFF:
+#define ATTR_STR(_name) \
+  case UNSPEC_##_name: \
+    attr = #_name; \
+    break;
+          ATTR_STR(GOT)
+          ATTR_STR(GOTOFF)
+          ATTR_STR(GOTFUNCDESC)
+          ATTR_STR(GOTOFFFUNCDESC)
+	  }
+	if (attr)
+	  {
+  	    fprintf (file, "#");
 	    output_addr_const (file, addr);
-	    fprintf (file, "@GOTOFF");
+	    fprintf(file, "@%s", attr);
 	    return;
 	  }
       }
@@ -1927,7 +1964,7 @@ rx_expand_prologue (void)
 	gen_safe_add (stack_pointer_rtx, frame_pointer_rtx, NULL_RTX,
 		      false /* False because the epilogue will use the FP not the SP.  */);
     }
-  if (crtl->uses_pic_offset_table)
+  if (crtl->uses_pic_offset_table && !TARGET_FDPIC)
     {
       emit_insn (gen_loadGOT (gen_rtx_REG (SImode, PIC_REG)));
     }
@@ -2933,6 +2970,13 @@ rx_option_override (void)
   if (flag_strict_volatile_bitfields < 0 && abi_version_at_least(2))
     flag_strict_volatile_bitfields = 1;
 
+  /* FDPIC code is a special form of PIC, and the vast majority of code
+     generation constraints that apply to PIC also apply to FDPIC, so we
+     set flag_pic to avoid the need to check TARGET_FDPIC everywhere
+     flag_pic is checked. */
+  if (TARGET_FDPIC && !flag_pic)
+    flag_pic = 2;
+
   rx_override_options_after_change ();
 
   /* These values are bytes, not log.  */
@@ -3042,7 +3086,10 @@ rx_is_legitimate_constant (machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 	case UNSPEC:
 	  return XINT (x, 1) == UNSPEC_CONST ||
 		 XINT (x, 1) == UNSPEC_PID_ADDR ||
+		 XINT (x, 1) == UNSPEC_GOT ||
 		 XINT (x, 1) == UNSPEC_GOTOFF ||
+		 XINT (x, 1) == UNSPEC_GOTFUNCDESC ||
+		 XINT (x, 1) == UNSPEC_GOTOFFFUNCDESC ||
 		 XINT (x, 1) == UNSPEC_PLT;
 
 	default:
@@ -3743,6 +3790,36 @@ int rx_legitimate_pic_operand_p(rtx x)
 	   && (GET_CODE (x) != SYMBOL_REF
 	      || ! CONSTANT_POOL_ADDRESS_P (x)
 	       || ! nonpic_symbol_mentioned_p (get_pool_constant (x)))));
+}
+
+/* Emit insns to load the function address from FUNCDESC (an FDPIC
+   function descriptor) into r2 and the GOT address into r13,
+   returning an rtx for r2.  */
+
+rtx
+rx_load_function_descriptor (rtx funcdesc)
+{
+  rtx r2 = gen_rtx_REG (Pmode, R2_REG);
+  rtx pic_reg = gen_rtx_REG (Pmode, PIC_REG);
+  rtx fnaddr = gen_rtx_MEM (Pmode, funcdesc);
+  rtx gotaddr = gen_rtx_MEM (Pmode, plus_constant (Pmode, funcdesc, 4));
+
+  emit_move_insn (r2, fnaddr);
+  /* The ABI requires the entry point address to be loaded first, so
+     prevent the load from being moved after that of the GOT
+     address.  */
+  emit_insn (gen_blockage ());
+  emit_move_insn (pic_reg, gotaddr);
+  return r2;
+}
+
+/* Return an rtx holding the initial value of the FDPIC register (the
+   FDPIC pointer passed in from the caller).  */
+
+rtx
+rx_get_fdpic_reg_initial_val (void)
+{
+  return get_hard_reg_initial_val (Pmode, PIC_REG);
 }
 
 

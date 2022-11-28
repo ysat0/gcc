@@ -143,3 +143,10 @@ Enables or disables the use of the SMOVF, SMOVB, SMOVU, SUNTIL, SWHILE and RMPA 
 mjsr
 Target Mask(JSR)
 Always use JSR, never BSR, for calls.
+
+;---------------------------------------------------
+
+mfdpic
+Target Var(TARGET_FDPIC) Init(0)
+Generate ELF FDPIC code.
+
