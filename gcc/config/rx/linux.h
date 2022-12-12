@@ -45,12 +45,23 @@
       if (ALLOW_RX_FPU_INSNS)			\
 	builtin_define ("__RX_FPU_INSNS__");	\
 						\
+      if (TARGET_FDPIC)				\
+	{					\
+	  builtin_define ("__FDPIC__");		\
+	  builtin_define ("__RX_FDPIC__");	\
+	}					\
     }                                           \
   while (0)
 
 #undef  CC1_SPEC
 #define CC1_SPEC "\
   %{mcpu=rx200:%{fpu:%erx200 cpu does not have FPU hardware}}"
+
+#undef  STARTFILE_SPEC
+#define STARTFILE_SPEC "crt1.o%s crti.o%s"
+
+#undef  ENDFILE_SPEC
+#define ENDFILE_SPEC "crtn.o%s"
 
 #undef  ASM_SPEC
 #define ASM_SPEC "\
@@ -59,6 +70,14 @@
 %{!m64bit-doubles:-m32bit-doubles} \
 %{msmall-data-limit*:-msmall-data-limit} \
 %{mrelax:-relax} \
+%{mfdpic:--fdpic} \
+"
+
+#undef  LIB_SPEC
+#define LIB_SPEC "					\
+--start-group						\
+-lc							\
+--end-group					   	\
 "
 
 #undef DATA_SECTION_ASM_OP
