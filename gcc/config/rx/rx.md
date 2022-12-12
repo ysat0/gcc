@@ -2974,12 +2974,13 @@
   [(match_operand 0) (match_operand 1)]
   "TARGET_FDPIC"
 {
-  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
+  rtx picreg = rx_get_fdpic_reg_initial_val();
   rtx gotsym = gen_sym2GOTFUNCDESC (operands[1]);
+  rtx mem = !can_create_pseudo_p ()
+            ? operands[0] : gen_reg_rtx (GET_MODE (operands[0]));
   PUT_MODE (gotsym, Pmode);
-  emit_move_insn (operands[0],
-                  gen_rtx_MEM(Pmode,
-                              gen_rtx_PLUS(Pmode, picreg, gotsym)));
+  emit_move_insn (mem, gen_rtx_PLUS(Pmode, picreg, gotsym));
+  emit_move_insn (operands[0], gen_rtx_MEM(Pmode, mem));
   DONE;
 })
 
@@ -2991,15 +2992,14 @@
   [(match_operand 0) (match_operand 1)]
   "TARGET_FDPIC"
 {
-  rtx picreg = rx_get_fdpic_reg_initial_val ();
-  rtx t = !can_create_pseudo_p ()
+  rtx picreg = rx_get_fdpic_reg_initial_val();
+  rtx mem = !can_create_pseudo_p ()
 	  ? operands[0]
 	  : gen_reg_rtx (GET_MODE (operands[0]));
-
   rtx gotoffsym = gen_sym2GOTOFFFUNCDESC (operands[1]);
   PUT_MODE (gotoffsym, Pmode);
-  emit_move_insn (t, gotoffsym);
-  emit_move_insn (operands[0], gen_rtx_PLUS (Pmode, t, picreg));
+  emit_move_insn (mem, gen_rtx_PLUS (Pmode, picreg, gotoffsym));
+  emit_move_insn (operands[0], gen_rtx_MEM(Pmode, mem));
   DONE;
 })
 
@@ -3026,13 +3026,7 @@
     }
   else
     {
-      emit_move_insn (picreg, rx_get_fdpic_reg_initial_val ());
-      gotsym = gen_sym2GOTFUNCDESC (operands[0]);
-      PUT_MODE (gotsym, Pmode);
-      emit_move_insn(picreg, gen_rtx_PLUS(Pmode, picreg, gotsym));
-      emit_move_insn(operands[0], gen_rtx_MEM(Pmode, picreg));
-      emit_move_insn(picreg, gen_rtx_MEM(Pmode,
-                                         plus_constant(Pmode, picreg, 4)));
+      emit_call_insn (gen_call_internal (rx_load_function_descriptor (operands[0])));
     }
   DONE;
 })
@@ -3064,16 +3058,8 @@
     }
   else
     {
-      rtx t = !can_create_pseudo_p ()
-	      ? operands[1] : gen_reg_rtx (GET_MODE (operands[1]));
-      emit_move_insn (picreg, rx_get_fdpic_reg_initial_val ());
-      gotsym = gen_sym2GOTFUNCDESC (operands[1]);
-      PUT_MODE (gotsym, Pmode);
-      emit_move_insn(picreg, gen_rtx_PLUS(Pmode, picreg, gotsym));
-      emit_move_insn(t, gen_rtx_MEM(Pmode, picreg));
-      emit_move_insn(picreg, gen_rtx_MEM(Pmode,
-                                         plus_constant(Pmode, picreg, 4)));
-      emit_call_insn (gen_call_value_internal (operands[0], t));
+      emit_call_insn (gen_call_value_internal (operands[0],
+                                               rx_load_function_descriptor (operands[1])));
     }
   DONE;
 })
@@ -3105,16 +3091,7 @@
     }
   else
     {
-      rtx t = !can_create_pseudo_p ()
-	      ? operands[0] : gen_reg_rtx (GET_MODE (operands[0]));
-      emit_move_insn (picreg, rx_get_fdpic_reg_initial_val ());
-      gotsym = gen_sym2GOTFUNCDESC (operands[0]);
-      PUT_MODE (gotsym, Pmode);
-      emit_move_insn(picreg, gen_rtx_PLUS(Pmode, picreg, gotsym));
-      emit_move_insn(t, gen_rtx_MEM(Pmode, picreg));
-      emit_move_insn(picreg, gen_rtx_MEM(Pmode,
-                                         plus_constant(Pmode, picreg, 4)));
-      emit_call_insn (gen_sibcall_internal (t));
+      emit_call_insn (gen_sibcall_internal (rx_load_function_descriptor (operands[0])));
     }
   DONE;
 })
@@ -3157,7 +3134,8 @@
       emit_move_insn(t, gen_rtx_MEM(Pmode, picreg));
       emit_move_insn(picreg, gen_rtx_MEM(Pmode,
                                          plus_constant(Pmode, picreg, 4)));
-      emit_call_insn (gen_sibcall_value_internal (operands[0], t));
+      emit_call_insn (gen_sibcall_value_internal (operands[0],
+						  rx_load_function_descriptor (operands[0])));
     }
   DONE;
 })

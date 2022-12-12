@@ -210,7 +210,7 @@ legitimize_pic_address (rtx orig, machine_mode mode ATTRIBUTE_UNUSED, rtx reg)
 	  SYMBOL_REF_FUNCTION_P (orig) && SYMBOL_REF_EXTERNAL_P(orig))
 	emit_insn (gen_symGOTFUNCDESC2reg (reg, orig));
       else
-	emit_insn (gen_symGOT2reg (reg, orig));
+	emit_insn (gen_symGOTOFF2reg (reg, orig));
       crtl->uses_pic_offset_table = 1;
       return reg;
     }
@@ -330,8 +330,7 @@ rx_is_legitimate_address (machine_mode mode, rtx x,
 bool
 nonpic_symbol_mentioned_p (rtx x)
 {
-  if (GET_CODE (x) == SYMBOL_REF || GET_CODE (x) == LABEL_REF
-      || GET_CODE (x) == PC)
+  if (GET_CODE (x) == PC)
     return true;
 
   /* We don't want to look into the possible MEM location of a
@@ -403,7 +402,7 @@ rx_is_restricted_memory_address (rtx mem, machine_mode mode)
       }
 
     case SYMBOL_REF:
-      /* Can happen when small data is being supported.
+  /* Can happen when small data is being supported.
          Assume that it will be resolved into GP+INT.  */
       return true;
 
@@ -570,7 +569,8 @@ rx_print_operand_address (FILE * file, machine_mode /*mode*/, rtx addr)
 	  }
 	if (attr)
 	  {
-  	    fprintf (file, "#");
+	    PUT_CODE(addr, SYMBOL_REF);
+	    fprintf (file, "#");
 	    output_addr_const (file, addr);
 	    fprintf(file, "@%s", attr);
 	    return;
@@ -3793,24 +3793,22 @@ int rx_legitimate_pic_operand_p(rtx x)
 }
 
 /* Emit insns to load the function address from FUNCDESC (an FDPIC
-   function descriptor) into r2 and the GOT address into r13,
-   returning an rtx for r2.  */
+   function descriptor) and the GOT address */
 
 rtx
-rx_load_function_descriptor (rtx funcdesc)
+rx_load_function_descriptor (rtx sym)
 {
-  rtx r2 = gen_rtx_REG (Pmode, R2_REG);
-  rtx pic_reg = gen_rtx_REG (Pmode, PIC_REG);
-  rtx fnaddr = gen_rtx_MEM (Pmode, funcdesc);
-  rtx gotaddr = gen_rtx_MEM (Pmode, plus_constant (Pmode, funcdesc, 4));
-
-  emit_move_insn (r2, fnaddr);
-  /* The ABI requires the entry point address to be loaded first, so
-     prevent the load from being moved after that of the GOT
-     address.  */
-  emit_insn (gen_blockage ());
-  emit_move_insn (pic_reg, gotaddr);
-  return r2;
+  rtx gotsym = gen_sym2GOTFUNCDESC (sym);
+  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
+  rtx t = !can_create_pseudo_p ()
+    ? sym : gen_reg_rtx (GET_MODE (sym));
+  emit_move_insn (picreg, rx_get_fdpic_reg_initial_val ());
+  PUT_MODE (gotsym, Pmode);
+  emit_move_insn(picreg, gen_rtx_PLUS(Pmode, picreg, gotsym));
+  emit_move_insn(t, gen_rtx_MEM(Pmode, picreg));
+  emit_move_insn(picreg, gen_rtx_MEM(Pmode,
+  				     plus_constant(Pmode, picreg, 4)));
+  return t;
 }
 
 /* Return an rtx holding the initial value of the FDPIC register (the
@@ -3822,6 +3820,23 @@ rx_get_fdpic_reg_initial_val (void)
   return get_hard_reg_initial_val (Pmode, PIC_REG);
 }
 
+rtx rx_mov_pic_operands(rtx x)
+{
+  rtx gotsym;
+  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
+  rtx t;
+  if (GET_CODE(x) == SYMBOL_REF)
+    {
+      gotsym = gen_sym2GOT (x);
+      t = gen_reg_rtx (GET_MODE (x));
+      emit_insn(gen_addsi3(t, picreg, gotsym));
+      emit_move_insn(t, gen_rtx_MEM(Pmode, t));
+      crtl->uses_pic_offset_table = true;
+      return t;
+    }
+  else
+    return x;
+}
 
 #undef  TARGET_NARROW_VOLATILE_BITFIELD
 #define TARGET_NARROW_VOLATILE_BITFIELD		rx_narrow_volatile_bitfield
