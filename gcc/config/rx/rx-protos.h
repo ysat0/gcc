@@ -175,5 +175,7 @@ bool nonpic_symbol_mentioned_p (rtx x);
 rtx legitimize_pic_address (rtx orig,
 			    machine_mode mode ATTRIBUTE_UNUSED, rtx reg);
 rtx rx_get_fdpic_reg_initial_val (void);
+rtx rx_load_function_descriptor (rtx sym);
+rtx rx_mov_pic_operands(rtx x);
 
 #endif /* GCC_RX_PROTOS_H */
