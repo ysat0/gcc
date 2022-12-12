@@ -620,6 +620,11 @@
 	(match_operand:register_modes 1 "general_operand"))]
   ""
   {
+    if (flag_pic)
+      {
+	operands[0] = rx_mov_pic_operands(operands[0]);
+	operands[1] = rx_mov_pic_operands(operands[1]);
+      }
     if (MEM_P (operands[0]) && MEM_P (operands[1]))
       operands[1] = copy_to_mode_reg (<register_modes:MODE>mode, operands[1]);
     operands[0] = rx_maybe_pidify_operand (operands[0], 0);
@@ -2933,12 +2938,13 @@
   rtx gotsym = gen_sym2GOT (operands[1]);
   PUT_MODE (gotsym, Pmode);
   rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
+  rtx mem = !can_create_pseudo_p ()
+            ? operands[0] : gen_reg_rtx (GET_MODE (operands[0]));
 
   if (TARGET_FDPIC)
       emit_move_insn (picreg, rx_get_fdpic_reg_initial_val ());
-  emit_move_insn (operands[0],
-                  gen_rtx_MEM(Pmode,
-                              gen_rtx_PLUS(Pmode, picreg, gotsym)));
+  emit_insn(gen_addsi3(mem, picreg, gotsym));
+  emit_move_insn (operands[0], gen_rtx_MEM(Pmode, mem));
   DONE;
 })
 
@@ -2952,11 +2958,11 @@
   ""
 {
   rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
-
   rtx gotoffsym = gen_sym2GOTOFF (operands[1]);
-  emit_move_insn (operands[0],
-                  gen_rtx_MEM(Pmode,
-                              gen_rtx_PLUS(Pmode, picreg, gotoffsym)));
+  rtx mem = !can_create_pseudo_p ()
+            ? operands[0] : gen_reg_rtx (GET_MODE (operands[0]));
+  emit_move_insn(mem, gen_rtx_PLUS(Pmode, picreg, gotoffsym));
+  emit_move_insn (operands[0], gen_rtx_MEM(Pmode, mem));
   DONE;
 })
 
@@ -3012,16 +3018,11 @@
    (clobber (reg:CC CC_REG))]
   ""
 {
-  rtx gotsym;
-
-  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
   if (!TARGET_FDPIC)
     {
-      gotsym = gen_sym2GOT (operands[0]);
-      PUT_MODE (gotsym, Pmode);
-      emit_move_insn (operands[0],
-                      gen_rtx_MEM(Pmode,
-                                  gen_rtx_PLUS(Pmode, picreg, gotsym)));
+      rtx t = gen_reg_rtx(GET_MODE(operands[0]));
+      emit_insn(gen_symGOT2reg(t, operands[0]));
+      emit_call_insn (gen_call_internal (operands[0]));
     }
   else
     {
@@ -3033,7 +3034,6 @@
       emit_move_insn(picreg, gen_rtx_MEM(Pmode,
                                          plus_constant(Pmode, picreg, 4)));
     }
-  emit_call_insn (gen_call_internal (operands[0]));
   DONE;
 })
 
@@ -3056,16 +3056,10 @@
    (clobber (reg:CC CC_REG))]
   ""
 {
-  rtx gotsym;
-
-  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
   if (!TARGET_FDPIC)
     {
-      gotsym = gen_sym2GOT (operands[1]);
-      PUT_MODE (gotsym, Pmode);
-      emit_move_insn (operands[0],
-                      gen_rtx_MEM(Pmode,
-                                  gen_rtx_PLUS(Pmode, picreg, gotsym)));
+      rtx t = gen_reg_rtx(GET_MODE(operands[0]));
+      emit_insn(gen_symGOT2reg(t, operands[0]));
       emit_call_insn (gen_call_value_internal (operands[0], operands[1]));
     }
   else
@@ -3103,16 +3097,10 @@
    (clobber (reg:CC CC_REG))]
   ""
 {
-  rtx gotsym;
-
-  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
   if (!TARGET_FDPIC)
     {
-      gotsym = gen_sym2GOT (operands[0]);
-      PUT_MODE (gotsym, Pmode);
-      emit_move_insn (operands[0],
-                      gen_rtx_MEM(Pmode,
-                                  gen_rtx_PLUS(Pmode, picreg, gotsym)));
+      rtx t = gen_reg_rtx(GET_MODE(operands[0]));
+      emit_insn(gen_symGOT2reg(t, operands[0]));
       emit_call_insn (gen_sibcall_internal (operands[0]));
     }
   else
@@ -3150,20 +3138,16 @@
    (clobber (reg:CC CC_REG))]
   ""
 {
-  rtx gotsym;
-
-  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
   if (!TARGET_FDPIC)
     {
-      gotsym = gen_sym2GOT (operands[1]);
-      PUT_MODE (gotsym, Pmode);
-      emit_move_insn (operands[0],
-                      gen_rtx_MEM(Pmode,
-                                  gen_rtx_PLUS(Pmode, picreg, gotsym)));
+      rtx t = gen_reg_rtx(GET_MODE(operands[0]));
+      emit_insn(gen_symGOT2reg(t, operands[0]));
       emit_call_insn (gen_sibcall_value_internal (operands[0], operands[1]));
     }
   else
     {
+      rtx gotsym;
+      rtx picreg = rx_get_fdpic_reg_initial_val();
       rtx t = !can_create_pseudo_p ()
 	      ? operands[1] : gen_reg_rtx (GET_MODE (operands[1]));
       emit_move_insn (picreg, rx_get_fdpic_reg_initial_val ());
