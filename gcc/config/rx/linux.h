@@ -80,6 +80,16 @@
 --end-group					   	\
 "
 
+#define UCLIBC_DYNAMIC_LINKER "/lib/ld-uClibc.so.0"
+
+#undef LINK_SPEC
+#define LINK_SPEC \
+  "%{shared} %{" FPIE_SPEC ":-pie} \
+  %{!shared: %{!static: \
+   %{rdynamic:-export-dynamic} \
+   %{!dynamic-linker:-dynamic-linker " UCLIBC_DYNAMIC_LINKER "}} \
+   %{static}}"
+
 #undef DATA_SECTION_ASM_OP
 #define DATA_SECTION_ASM_OP	      			\
    "\t.section .data,\"aw\",@progbits\n\t.p2align 2"
@@ -253,3 +263,7 @@
 
 #define PIC_REGNUM 13
 #define GOT_SYMBOL_NAME "*_GLOBAL_OFFSET_TABLE_"
+
+#define TARGET_ASM_FILE_END file_end_indicate_exec_stack
+
+#define NO_FUNCTION_CSE (flag_pic)

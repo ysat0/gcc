@@ -436,11 +436,11 @@
   [(call (match_operand:QI 0 "general_operand")
 	 (match_operand:SI 1 "general_operand"))]
   ""
-  {
-    rtx dest = XEXP (operands[0], 0);
+{
+  rtx dest = XEXP (operands[0], 0);
 
   if (flag_pic &&
-      (GET_CODE (dest) == SYMBOL_REF) && (!SYMBOL_REF_LOCAL_P (dest)))
+      (GET_CODE (dest) == SYMBOL_REF))
     {
       if (flag_plt)
         emit_call_insn (gen_call_internal_plt (dest));
@@ -476,10 +476,11 @@
 	      (match_operand:SI 2 "general_operand")))]
   ""
 {
-  rtx dest = XEXP (operands[1], 0);
+  rtx dest;
+  dest = XEXP (operands[1], 0);
 
   if (flag_pic &&
-      (GET_CODE (dest) == SYMBOL_REF) && (!SYMBOL_REF_LOCAL_P (dest)))
+      GET_CODE (dest) == SYMBOL_REF)
     {
       if (flag_plt)
         emit_call_insn (gen_call_value_internal_plt (operands[0], dest));
@@ -547,8 +548,7 @@
   ""
   {
     if (flag_pic &&
-        (GET_CODE (operands[1]) == SYMBOL_REF) &&
-	(!SYMBOL_REF_LOCAL_P (operands[1])))
+        GET_CODE (operands[1]) == SYMBOL_REF)
       {
         if (flag_plt)
           emit_call_insn (gen_sibcall_value_internal_plt (operands[0],

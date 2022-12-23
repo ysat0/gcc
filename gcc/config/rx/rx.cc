@@ -3787,9 +3787,9 @@ rx_modes_tieable_p (machine_mode mode1, machine_mode mode2)
 int rx_legitimate_pic_operand_p(rtx x)
 {
   return ((! nonpic_symbol_mentioned_p (x)
-	   && (GET_CODE (x) != SYMBOL_REF
-	      || ! CONSTANT_POOL_ADDRESS_P (x)
-	       || ! nonpic_symbol_mentioned_p (get_pool_constant (x)))));
+	  && (GET_CODE (x) != SYMBOL_REF
+	     || ! CONSTANT_POOL_ADDRESS_P (x)
+	      || ! nonpic_symbol_mentioned_p (get_pool_constant (x)))));
 }
 
 /* Emit insns to load the function address from FUNCDESC (an FDPIC
@@ -3822,20 +3822,31 @@ rx_get_fdpic_reg_initial_val (void)
 
 rtx rx_mov_pic_operands(rtx x)
 {
-  rtx gotsym;
+  rtx gotsym = NULL;
   rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
   rtx t;
-  if (GET_CODE(x) == SYMBOL_REF)
+  bool const_p = false;
+  if (GET_CODE(x) == SYMBOL_REF && !SYMBOL_REF_FUNCTION_P(x))
+    // mov.L #symbol, reg
+    gotsym = gen_sym2GOT (x);
+  else if (GET_CODE(x) == CONST &&
+	   GET_CODE(XEXP(x, 0)) == PLUS &&
+	   GET_CODE(XEXP(XEXP(x, 0), 0)) == SYMBOL_REF)
     {
-      gotsym = gen_sym2GOT (x);
-      t = gen_reg_rtx (GET_MODE (x));
-      emit_insn(gen_addsi3(t, picreg, gotsym));
-      emit_move_insn(t, gen_rtx_MEM(Pmode, t));
-      crtl->uses_pic_offset_table = true;
-      return t;
+      // mov.L #symbol + const, reg
+      gotsym = gen_sym2GOT (XEXP(XEXP(x, 0), 0));
+      const_p = true;
     }
   else
     return x;
+  t = !can_create_pseudo_p ()
+    ? x : gen_reg_rtx (GET_MODE(x));
+  emit_insn(gen_addsi3(t, picreg, gotsym));
+  emit_move_insn(t, gen_rtx_MEM(GET_MODE(x), t));
+  crtl->uses_pic_offset_table = true;
+  if (const_p)
+    emit_move_insn(t, gen_rtx_PLUS(GET_MODE(x), t, XEXP(XEXP(x, 0), 1)));
+  return t;
 }
 
 #undef  TARGET_NARROW_VOLATILE_BITFIELD
