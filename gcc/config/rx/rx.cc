@@ -1769,7 +1769,7 @@ add_pop_cfi_notes (rtx_insn *insn, unsigned int high, unsigned int low)
   for (unsigned int i = low; i <= high; i++)
     {
       add_reg_note (insn, REG_CFA_RESTORE, gen_rtx_REG (word_mode, i));
-      if (i == FRAME_POINTER_REGNUM)
+      if (i == FRAME_POINTER_REGNUM && frame_pointer_needed)
 	src = frame_pointer_rtx;
     }
   t = plus_constant (Pmode, src, (high - low + 1) * UNITS_PER_WORD);
