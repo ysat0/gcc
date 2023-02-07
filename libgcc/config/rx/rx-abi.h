@@ -22,11 +22,16 @@
    along with GCC; see the file COPYING3.  If not see
    <http://www.gnu.org/licenses/>.  */
 
+#if defined(__RX_GCC_ABI__) || defined(__RX_ABI__)
 /* Make __COM_<RX_NAME> an alias for __<GCC_NAME>.  */
 #define RENAME_LIBRARY(GCC_NAME, RX_NAME)		\
   __asm__ (".globl\t__COM_" #RX_NAME "\n"		\
 	   ".set\t__COM_" #RX_NAME ", ___" #GCC_NAME "\n");
-
+#else
+#define RENAME_LIBRARY(GCC_NAME, RX_NAME)		\
+  __asm__ (".globl\t__COM_" #RX_NAME "\n"		\
+	   ".set\t__COM_" #RX_NAME ", __" #GCC_NAME "\n");
+#endif
 
 /* The long-long aliases...  */
 
