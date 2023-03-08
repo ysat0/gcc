@@ -3832,6 +3832,7 @@ rtx
 rx_mov_pic_operands (rtx x)
 {
   rtx gotsym = NULL;
+  rtx funcsym = NULL;
   rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
   rtx t;
   int const_p = 0;
