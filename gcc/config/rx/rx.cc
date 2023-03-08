@@ -176,7 +176,7 @@ legitimize_pic_address (rtx orig, machine_mode mode ATTRIBUTE_UNUSED, rtx reg)
 		    !SYMBOL_REF_LOCAL_P (orig))))
     {
       if (reg == NULL_RTX)
-       reg = gen_reg_rtx (Pmode);
+	reg = gen_reg_rtx (Pmode);
 
       if (TARGET_FDPIC
 	  && GET_CODE (orig) == SYMBOL_REF && SYMBOL_REF_FUNCTION_P (orig))
@@ -204,7 +204,7 @@ legitimize_pic_address (rtx orig, machine_mode mode ATTRIBUTE_UNUSED, rtx reg)
   else if (GET_CODE (orig) == SYMBOL_REF)
     {
       if (reg == NULL_RTX)
-       reg = gen_reg_rtx (Pmode);
+	reg = gen_reg_rtx (Pmode);
 
       if (TARGET_FDPIC &&
 	  SYMBOL_REF_FUNCTION_P (orig) && SYMBOL_REF_EXTERNAL_P(orig))
@@ -213,6 +213,19 @@ legitimize_pic_address (rtx orig, machine_mode mode ATTRIBUTE_UNUSED, rtx reg)
 	emit_insn (gen_symGOTOFF2reg (reg, orig));
       crtl->uses_pic_offset_table = 1;
       return reg;
+    }
+  else if (GET_CODE (XEXP (orig, 1)) == LABEL_REF)
+    {
+      rtx label = XEXP (orig, 1);
+      if (reg == NULL_RTX)
+	reg = gen_reg_rtx(Pmode);
+      emit_insn(gen_mvfc(reg, GEN_INT (CTRLREG_PC)));
+      if (GET_CODE (orig) == PLUS)
+	{
+	  label = gen_pcloc(label);
+	  XEXP (orig, 1) = XEXP (orig, 0);
+	  XEXP (orig, 0) = gen_rtx_PLUS(Pmode, reg, label);
+	}
     }
   return orig;
 }
@@ -344,7 +357,8 @@ nonpic_symbol_mentioned_p (rtx x)
 	  || XINT (x, 1) == UNSPEC_GOTOFF
 	  || XINT (x, 1) == UNSPEC_PLT
 	  || XINT (x, 1) == UNSPEC_GOTFUNCDESC
-	  || XINT (x, 1) == UNSPEC_GOTOFFFUNCDESC))
+	  || XINT (x, 1) == UNSPEC_GOTOFFFUNCDESC
+	  || XINT (x, 1) == UNSPEC_PCLOC))
     return false;
 
   const char* fmt = GET_RTX_FORMAT (GET_CODE (x));
@@ -566,6 +580,14 @@ rx_print_operand_address (FILE * file, machine_mode /*mode*/, rtx addr)
           ATTR_STR(GOTOFF)
           ATTR_STR(GOTFUNCDESC)
           ATTR_STR(GOTOFFFUNCDESC)
+	  case UNSPEC_PCLOC:
+	    fprintf (file, "#");
+	    if (GET_CODE (addr) == SYMBOL_REF)
+	      output_addr_const (file, addr);
+	    else
+	      output_addr_const (file, XEXP(addr, 0));
+	    fprintf (file, " - . + 3");
+	    return;
 	  }
 	if (attr)
 	  {
@@ -1611,9 +1633,9 @@ rx_get_stack_layout (unsigned int * lowest,
 		 to call-used by rx_conditional_register_usage.  If so then
 		 they can be used in the fast interrupt handler without
 		 saving them on the stack.  */
-	      || (is_fast_interrupt_func (NULL_TREE)
-	      || (flag_pic && reg == PIC_REGNUM))
-		  && ! IN_RANGE (reg, 10, 13)))
+	      || is_fast_interrupt_func (NULL_TREE)
+	      || ((flag_pic && reg == PIC_REGNUM)
+		  && ! IN_RANGE (reg, 10, 13))))
 	{
 	  if (low == 0)
 	    low = reg;
@@ -1950,7 +1972,10 @@ rx_expand_prologue (void)
     }
   if (crtl->uses_pic_offset_table && !TARGET_FDPIC)
     {
-      emit_insn (gen_loadGOT (gen_rtx_REG (SImode, PIC_REG)));
+      rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
+      rtx gotsym = gen_rtx_SYMBOL_REF (Pmode, "_GLOBAL_OFFSET_TABLE_");
+      emit_insn (gen_mvfc (picreg, GEN_INT (CTRLREG_PC)));
+      emit_move_insn (picreg, gen_rtx_PLUS (Pmode, picreg, gotsym));
     }
 }
 
@@ -3074,7 +3099,8 @@ rx_is_legitimate_constant (machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 		 XINT (x, 1) == UNSPEC_GOTOFF ||
 		 XINT (x, 1) == UNSPEC_GOTFUNCDESC ||
 		 XINT (x, 1) == UNSPEC_GOTOFFFUNCDESC ||
-		 XINT (x, 1) == UNSPEC_PLT;
+		 XINT (x, 1) == UNSPEC_PLT ||
+		 XINT (x, 1) == UNSPEC_PCLOC;
 
 	default:
 	  /* FIXME: Can this ever happen ?  */
@@ -3802,7 +3828,8 @@ rx_get_fdpic_reg_initial_val (void)
   return get_hard_reg_initial_val (Pmode, PIC_REG);
 }
 
-rtx rx_mov_pic_operands(rtx x)
+rtx
+rx_mov_pic_operands (rtx x)
 {
   rtx gotsym = NULL;
   rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
@@ -3811,8 +3838,27 @@ rtx rx_mov_pic_operands(rtx x)
   if (!can_create_pseudo_p ())
     return x;
   if (GET_CODE(x) == SYMBOL_REF)
-    // mov.L #symbol, reg
-    gotsym = gen_sym2GOT (x);
+    {
+      if (!RTX_FLAG (x, frame_related))
+	{
+	  if (TARGET_FDPIC && SYMBOL_REF_FUNCTION_P(x))
+	    // mov.L #symbol@GOTOFFFUNCDESC, reg
+	    funcsym = gen_sym2GOTOFFFUNCDESC (x);
+	  else
+	    // mov.L #symbol@GOT, reg
+	    gotsym = gen_sym2GOT (x);
+	}
+      else
+	{
+	  // mvfc pc, reg
+	  // add #symbol - . + 3, reg
+	  rtx label = gen_pcloc(x);
+	  t = gen_reg_rtx (GET_MODE(x));
+	  emit_insn(gen_mvfc(t, GEN_INT (CTRLREG_PC)));
+	  emit_insn(gen_addsi3(t, t, label));
+	  return t;
+	}
+    }
   else if (GET_CODE(x) == CONST &&
 	   (GET_CODE(XEXP(x, 0)) == PLUS || GET_CODE(XEXP(x, 0)) == MINUS) &&
 	   GET_CODE(XEXP(XEXP(x, 0), 0)) == SYMBOL_REF)
@@ -3821,17 +3867,52 @@ rtx rx_mov_pic_operands(rtx x)
       gotsym = gen_sym2GOT (XEXP(XEXP(x, 0), 0));
       const_p = GET_CODE(XEXP(x, 0)) == PLUS ? 1 : -1;
     }
+  if (gotsym)
+    {
+      t = gen_reg_rtx (GET_MODE(x));
+      emit_insn(gen_addsi3(t, picreg, gotsym));
+      emit_move_insn(t, gen_rtx_MEM(GET_MODE(x), t));
+      crtl->uses_pic_offset_table = true;
+      if (const_p > 0)
+	emit_move_insn(t, gen_rtx_PLUS(GET_MODE(x), t, XEXP(XEXP(x, 0), 1)));
+      else if (const_p < 0)
+	emit_move_insn(t, gen_rtx_MINUS(GET_MODE(x), t, XEXP(XEXP(x, 0), 1)));
+      return t;
+    }
+  else if (funcsym)
+    {
+      t = gen_reg_rtx (GET_MODE(x));
+      emit_insn(gen_addsi3(t, picreg, funcsym));
+      return t;
+    }
   else
     return x;
-  t = gen_reg_rtx (GET_MODE(x));
-  emit_insn(gen_addsi3(t, picreg, gotsym));
-  emit_move_insn(t, gen_rtx_MEM(GET_MODE(x), t));
-  crtl->uses_pic_offset_table = true;
-  if (const_p > 0)
-    emit_move_insn(t, gen_rtx_PLUS(GET_MODE(x), t, XEXP(XEXP(x, 0), 1)));
-  else if (const_p < 0)
-    emit_move_insn(t, gen_rtx_MINUS(GET_MODE(x), t, XEXP(XEXP(x, 0), 1)));
-  return t;
+}
+
+/* Implement TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA.  */
+static bool
+rx_asm_output_addr_const_extra (FILE *file, rtx x)
+{
+  if (GET_CODE (x) == UNSPEC)
+    {
+      switch (XINT (x, 1))
+	{
+	case UNSPEC_PCLOC:
+	  output_addr_const (file, XVECEXP (x, 0, 0));
+	  break;
+	default:
+	  return false;
+	}
+      return true;
+    }
+  else
+    return false;
+}
+
+static bool
+rx_const_not_ok_for_debug_p (rtx p)
+{
+  return (GET_CODE (p) == SYMBOL_REF);
 }
 
 #undef  TARGET_NARROW_VOLATILE_BITFIELD
@@ -3991,6 +4072,12 @@ rtx rx_mov_pic_operands(rtx x)
 
 #undef  TARGET_HAVE_SPECULATION_SAFE_VALUE
 #define TARGET_HAVE_SPECULATION_SAFE_VALUE speculation_safe_value_not_needed
+
+#undef TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA
+#define TARGET_ASM_OUTPUT_ADDR_CONST_EXTRA rx_asm_output_addr_const_extra
+
+#undef TARGET_CONST_NOT_OK_FOR_DEBUG_P
+#define TARGET_CONST_NOT_OK_FOR_DEBUG_P rx_const_not_ok_for_debug_p
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 

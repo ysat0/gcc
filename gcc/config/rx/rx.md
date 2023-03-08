@@ -84,6 +84,7 @@
    (UNSPEC_PLT		   63)
    (UNSPEC_GOTFUNCDESC     64)
    (UNSPEC_GOTOFFFUNCDESC  65)
+   (UNSPEC_PCLOC           66)
 
    (CTRLREG_PSW		    0)
    (CTRLREG_PC		    1)
@@ -351,9 +352,9 @@
 	(match_operand:SI          0 "register_operand" "r"))
    (use (label_ref (match_operand  1 "" "")))]
   ""
-  { return TARGET_PID ? (TARGET_AS100_SYNTAX ? "\n?:\tbra\t%0"
+  { return TARGET_PID || flag_pic ? (TARGET_AS100_SYNTAX ? "\n?:\tbra\t%0"
 					     : "\n1:\tbra\t%0")
-	                                     : "\n1:jmp\t%0";
+					     : "\n1:jmp\t%0";
   }
   [(set_attr "timings" "33")
    (set_attr "length" "2")]
@@ -2935,15 +2936,13 @@
   [(match_operand 0 "" "") (match_operand 1 "" "")]
   ""
 {
-  rtx gotsym = gen_sym2GOT (operands[1]);
-  PUT_MODE (gotsym, Pmode);
-  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
   rtx mem = !can_create_pseudo_p ()
             ? operands[0] : gen_reg_rtx (GET_MODE (operands[0]));
+  rtx gotsym = gen_sym2GOT (operands[1]);
+  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
+  PUT_MODE (gotsym, Pmode);
 
-  if (TARGET_FDPIC)
-      emit_move_insn (picreg, rx_get_fdpic_reg_initial_val ());
-  emit_insn(gen_addsi3(mem, picreg, gotsym));
+  emit_insn (gen_addsi3(mem, picreg, gotsym));
   emit_move_insn (operands[0], gen_rtx_MEM(Pmode, mem));
   DONE;
 })
@@ -2976,11 +2975,8 @@
 {
   rtx picreg = rx_get_fdpic_reg_initial_val();
   rtx gotsym = gen_sym2GOTFUNCDESC (operands[1]);
-  rtx mem = !can_create_pseudo_p ()
-            ? operands[0] : gen_reg_rtx (GET_MODE (operands[0]));
   PUT_MODE (gotsym, Pmode);
-  emit_move_insn (mem, gen_rtx_PLUS(Pmode, picreg, gotsym));
-  emit_move_insn (operands[0], gen_rtx_MEM(Pmode, mem));
+  emit_move_insn (operands[0], gen_rtx_PLUS(Pmode, picreg, gotsym));
   DONE;
 })
 
@@ -2993,22 +2989,10 @@
   "TARGET_FDPIC"
 {
   rtx picreg = rx_get_fdpic_reg_initial_val();
-  rtx mem = !can_create_pseudo_p ()
-	  ? operands[0]
-	  : gen_reg_rtx (GET_MODE (operands[0]));
   rtx gotoffsym = gen_sym2GOTOFFFUNCDESC (operands[1]);
   PUT_MODE (gotoffsym, Pmode);
-  emit_move_insn (mem, gen_rtx_PLUS (Pmode, picreg, gotoffsym));
-  emit_move_insn (operands[0], gen_rtx_MEM(Pmode, mem));
+  emit_move_insn (operands[0], gen_rtx_PLUS (Pmode, picreg, gotoffsym));
   DONE;
-})
-
-(define_insn "loadGOT"
-  [(set (match_operand:SI 0 "register_operand" "=r")
-       (unspec:SI [(const_int 0)] UNSPEC_GOT))]
-  ""
-{
-  return "mvfc\tpc,%0\n\tadd\t#_GLOBAL_OFFSET_TABLE_,%0";
 })
 
 (define_expand "call_internal_got"
@@ -3150,4 +3134,10 @@
   "bra\t%A1@PLT"
   [(set_attr "length" "4")
    (set_attr "timings" "33")]
+)
+
+(define_expand "pcloc"
+  [(const:SI (unspec:SI [(match_operand:SI 0)] UNSPEC_PCLOC))]
+  ""
+  ""
 )
