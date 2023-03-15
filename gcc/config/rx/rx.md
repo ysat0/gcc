@@ -451,17 +451,21 @@
     }
   else
     {
+      rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
+      rtx savereg = gen_reg_rtx(Pmode);
       if (! rx_call_operand (dest, Pmode))
           dest = force_reg (Pmode, dest);
       if (TARGET_FDPIC)
         {
-          rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
 	  if (!REG_P(dest))
 	    dest = force_reg (Pmode, dest);
+	  emit_move_insn(savereg, picreg);
           emit_move_insn(picreg, gen_rtx_MEM(Pmode, gen_rtx_PLUS(SImode, dest, gen_rtx_CONST_INT(SImode, 4))));
           emit_move_insn(dest, gen_rtx_MEM(Pmode, dest));
 	}
       emit_call_insn (gen_call_internal (dest));
+      if (TARGET_FDPIC)
+	emit_move_insn(picreg, savereg);
       DONE;
     }
   }
@@ -499,17 +503,21 @@
     }
   else
     {
+      rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
+      rtx savereg = gen_reg_rtx(Pmode);
       if (! rx_call_operand (dest, Pmode))
         dest = force_reg (Pmode, dest);
       if (TARGET_FDPIC)
         {
-	  rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
 	  if (!REG_P(dest))
 	    dest = force_reg (Pmode, dest);
+	  emit_move_insn(savereg, picreg);
 	  emit_move_insn(picreg, gen_rtx_MEM(Pmode, gen_rtx_PLUS(SImode, dest, gen_rtx_CONST_INT(SImode, 4))));
 	  emit_move_insn(dest, gen_rtx_MEM(Pmode, dest));
         }
       emit_call_insn (gen_call_value_internal (operands[0], dest));
+      if (TARGET_FDPIC)
+	emit_move_insn(picreg, savereg);
     }
   DONE;
 })
