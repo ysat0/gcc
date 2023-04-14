@@ -259,7 +259,7 @@
 #undef TARGET_AS100_SYNTAX
 #define TARGET_AS100_SYNTAX 0
 
-#define PIC_REGNUM 13
+#define PIC_REG 13
 #define GOT_SYMBOL_NAME "*_GLOBAL_OFFSET_TABLE_"
 
 #define TARGET_ASM_FILE_END file_end_indicate_exec_stack
