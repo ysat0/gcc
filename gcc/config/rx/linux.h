@@ -262,6 +262,14 @@
 #define PIC_REG 13
 #define GOT_SYMBOL_NAME "*_GLOBAL_OFFSET_TABLE_"
 
+/* Register to hold the addressing base for position independent
+   code access to data items.  */
+#define PIC_OFFSET_TABLE_REGNUM	(flag_pic ? PIC_REG : INVALID_REGNUM)
+
+/* For FDPIC, the FDPIC register is call-clobbered (otherwise PLT
+   entries would need to handle saving and restoring it).  */
+#define PIC_OFFSET_TABLE_REG_CALL_CLOBBERED TARGET_FDPIC
+
 #define TARGET_ASM_FILE_END file_end_indicate_exec_stack
 
 #define NO_FUNCTION_CSE (flag_pic)
