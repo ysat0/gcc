@@ -214,7 +214,7 @@ legitimize_pic_address (rtx orig, machine_mode mode ATTRIBUTE_UNUSED, rtx reg)
       crtl->uses_pic_offset_table = 1;
       return reg;
     }
-  else if (GET_CODE (XEXP (orig, 1)) == LABEL_REF)
+  else if (MEM_P(orig) && GET_CODE (XEXP (orig, 1)) == LABEL_REF)
     {
       rtx label = XEXP (orig, 1);
       if (reg == NULL_RTX)
@@ -582,7 +582,7 @@ rx_print_operand_address (FILE * file, machine_mode /*mode*/, rtx addr)
           ATTR_STR(GOTOFFFUNCDESC)
 	  case UNSPEC_PCLOC:
 	    fprintf (file, "#");
-	    if (GET_CODE (addr) == SYMBOL_REF)
+	  if (SYMBOL_REF_P(addr))
 	      output_addr_const (file, addr);
 	    else
 	      output_addr_const (file, XEXP(addr, 0));
@@ -591,10 +591,14 @@ rx_print_operand_address (FILE * file, machine_mode /*mode*/, rtx addr)
 	  }
 	if (attr)
 	  {
-	    PUT_CODE(addr, SYMBOL_REF);
-	    fprintf (file, "#");
-	    output_addr_const (file, addr);
-	    fprintf(file, "@%s", attr);
+	    if (SYMBOL_REF_P(addr))
+	      {
+		fprintf (file, "#");
+		output_addr_const (file, addr);
+		fprintf(file, "@%s", attr);
+	      }
+	    else
+	      rx_print_operand (file, addr, 0);
 	    return;
 	  }
       }
@@ -1634,7 +1638,7 @@ rx_get_stack_layout (unsigned int * lowest,
 		 they can be used in the fast interrupt handler without
 		 saving them on the stack.  */
 	      || is_fast_interrupt_func (NULL_TREE)
-	      || ((flag_pic && reg == PIC_REGNUM)
+	      || ((flag_pic && reg == PIC_REG)
 		  && ! IN_RANGE (reg, 10, 13))))
 	{
 	  if (low == 0)
@@ -3804,19 +3808,23 @@ int rx_legitimate_pic_operand_p(rtx x)
    function descriptor) and the GOT address */
 
 rtx
-rx_load_function_descriptor (rtx sym)
+rx_load_function_descriptor (rtx sym, rtx savereg)
 {
   rtx gotsym = gen_sym2GOTFUNCDESC (sym);
   rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
-  rtx t = !can_create_pseudo_p ()
-    ? sym : gen_reg_rtx (GET_MODE (sym));
+  rtx func = gen_reg_rtx (GET_MODE (sym));
+  rtx got = gen_rtx_MEM(Pmode, plus_constant(Pmode, picreg, 4));
+  rtx tmp = gen_reg_rtx(Pmode);
+
   emit_move_insn (picreg, rx_get_fdpic_reg_initial_val ());
   PUT_MODE (gotsym, Pmode);
-  emit_move_insn(picreg, gen_rtx_PLUS(Pmode, picreg, gotsym));
-  emit_move_insn(t, gen_rtx_MEM(Pmode, picreg));
-  emit_move_insn(picreg, gen_rtx_MEM(Pmode,
-  				     plus_constant(Pmode, picreg, 4)));
-  return t;
+  emit_move_insn (savereg,  picreg);
+  emit_move_insn(tmp, gen_rtx_MEM(Pmode, gotsym));
+  emit_move_insn(picreg, gen_rtx_PLUS(Pmode, picreg, tmp));
+  emit_move_insn(func, gen_rtx_MEM(Pmode, picreg));
+  emit_insn(gen_set_got(picreg, got));
+
+  return func;
 }
 
 /* Return an rtx holding the initial value of the FDPIC register (the

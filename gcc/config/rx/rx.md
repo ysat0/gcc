@@ -85,6 +85,7 @@
    (UNSPEC_GOTFUNCDESC     64)
    (UNSPEC_GOTOFFFUNCDESC  65)
    (UNSPEC_PCLOC           66)
+   (UNSPEC_PIC_RESTORE     67)
 
    (CTRLREG_PSW		    0)
    (CTRLREG_PC		    1)
@@ -435,41 +436,38 @@
 
 (define_expand "call"
   [(call (match_operand:QI 0 "general_operand")
-	 (match_operand:SI 1 "general_operand"))]
+	 (match_operand:SI 1 "general_operand"))
+	 (use (match_operand 2 "" ""))]
   ""
 {
   rtx dest = XEXP (operands[0], 0);
 
-  if (flag_pic &&
-      (GET_CODE (dest) == SYMBOL_REF))
+  if (flag_pic && SYMBOL_REF_P(dest))
     {
       if (flag_plt)
         emit_call_insn (gen_call_internal_plt (dest));
       else
         emit_call_insn (gen_call_internal_got (dest));
-      DONE;
     }
   else
     {
       rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
       rtx savereg = gen_reg_rtx(Pmode);
-      if (! rx_call_operand (dest, Pmode))
-          dest = force_reg (Pmode, dest);
       if (TARGET_FDPIC)
         {
-	  if (!REG_P(dest))
-	    dest = force_reg (Pmode, dest);
-	  emit_move_insn(savereg, picreg);
-          emit_move_insn(picreg, gen_rtx_MEM(Pmode, gen_rtx_PLUS(SImode, dest, gen_rtx_CONST_INT(SImode, 4))));
-          emit_move_insn(dest, gen_rtx_MEM(Pmode, dest));
+	  dest = rx_load_function_descriptor(dest, savereg);
+	  emit_call_insn (gen_call_internal_fdpic (dest));
+	  emit_move_insn(picreg, savereg);
 	}
-      emit_call_insn (gen_call_internal (dest));
-      if (TARGET_FDPIC)
-	emit_move_insn(picreg, savereg);
-      DONE;
+      else
+        {
+	  if (! rx_call_operand (dest, Pmode))
+            dest = force_reg (Pmode, dest);
+          emit_call_insn (gen_call_internal (dest));
+	}
     }
-  }
-)
+  DONE;
+})
 
 (define_insn "call_internal"
   [(call (mem:QI (match_operand:SI 0 "rx_call_operand" "r,CALL_OP_SYMBOL_REF"))
@@ -483,17 +481,30 @@
    (set_attr "timings" "33")]
 )
 
+(define_insn "call_internal_fdpic"
+  [(call (mem:QI (match_operand:SI 0 "rx_call_operand" "r,CALL_OP_SYMBOL_REF"))
+	 (const_int 0))
+   (use (reg:SI PIC_REG))
+   (clobber (reg:CC CC_REG))]
+  ""
+  "@
+  jsr\t%0
+  bsr\t%A0"
+  [(set_attr "length" "2,4")
+   (set_attr "timings" "33")]
+)
+
 (define_expand "call_value"
   [(set (match_operand          0 "register_operand")
 	(call (match_operand:QI 1 "general_operand")
-	      (match_operand:SI 2 "general_operand")))]
+	      (match_operand:SI 2 "general_operand")))
+	 (use (match_operand 3 "" ""))]
   ""
 {
   rtx dest;
   dest = XEXP (operands[1], 0);
 
-  if (flag_pic &&
-      GET_CODE (dest) == SYMBOL_REF)
+  if (flag_pic && SYMBOL_REF_P(dest))
     {
       if (flag_plt)
         emit_call_insn (gen_call_value_internal_plt (operands[0], dest));
@@ -505,19 +516,18 @@
     {
       rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
       rtx savereg = gen_reg_rtx(Pmode);
-      if (! rx_call_operand (dest, Pmode))
-        dest = force_reg (Pmode, dest);
       if (TARGET_FDPIC)
         {
-	  if (!REG_P(dest))
-	    dest = force_reg (Pmode, dest);
-	  emit_move_insn(savereg, picreg);
-	  emit_move_insn(picreg, gen_rtx_MEM(Pmode, gen_rtx_PLUS(SImode, dest, gen_rtx_CONST_INT(SImode, 4))));
-	  emit_move_insn(dest, gen_rtx_MEM(Pmode, dest));
+	  dest = rx_load_function_descriptor(dest, savereg);
+	  emit_call_insn (gen_call_value_internal_fdpic (operands[0], dest));
+	  emit_move_insn(picreg, savereg);
+	}
+      else
+        {
+          if (! rx_call_operand (dest, Pmode))
+            dest = force_reg (Pmode, dest);
+          emit_call_insn (gen_call_value_internal (operands[0], dest));
         }
-      emit_call_insn (gen_call_value_internal (operands[0], dest));
-      if (TARGET_FDPIC)
-	emit_move_insn(picreg, savereg);
     }
   DONE;
 })
@@ -526,6 +536,20 @@
   [(set (match_operand                  0 "register_operand" "=r,r")
 	(call (mem:QI (match_operand:SI 1 "rx_call_operand"   "r,CALL_OP_SYMBOL_REF"))
 	      (const_int 0)))
+   (clobber (reg:CC CC_REG))]
+  ""
+  "@
+  jsr\t%1
+  bsr\t%A1"
+  [(set_attr "length" "2,4")
+   (set_attr "timings" "33")]
+)
+
+(define_insn "call_value_internal_fdpic"
+  [(set (match_operand                  0 "register_operand" "=r,r")
+	(call (mem:QI (match_operand:SI 1 "rx_call_operand"   "r,CALL_OP_SYMBOL_REF"))
+	      (const_int 0)))
+   (use (reg:SI PIC_REG))
    (clobber (reg:CC CC_REG))]
   ""
   "@
@@ -3034,7 +3058,11 @@
     }
   else
     {
-      emit_call_insn (gen_call_internal (rx_load_function_descriptor (operands[0])));
+      rtx picreg = rx_get_fdpic_reg_initial_val();
+      rtx savereg = gen_reg_rtx(Pmode);
+      XEXP(operands[0], 0) = rx_load_function_descriptor (operands[0], savereg);
+      emit_call_insn (gen_call_internal (operands[0]));
+      emit_move_insn (picreg, savereg);
     }
   DONE;
 })
@@ -3066,8 +3094,11 @@
     }
   else
     {
-      emit_call_insn (gen_call_value_internal (operands[0],
-                                               rx_load_function_descriptor (operands[1])));
+      rtx picreg = rx_get_fdpic_reg_initial_val();
+      rtx savereg = gen_reg_rtx(Pmode);
+      XEXP(operands[1], 0) = rx_load_function_descriptor (operands[1], savereg);
+      emit_call_insn (gen_call_value_internal (operands[0], operands[1]));
+      emit_move_insn (picreg, savereg);
     }
   DONE;
 })
@@ -3099,7 +3130,10 @@
     }
   else
     {
-      emit_call_insn (gen_sibcall_internal (rx_load_function_descriptor (operands[0])));
+      rtx picreg = rx_get_fdpic_reg_initial_val();
+      rtx savereg = gen_reg_rtx(Pmode);
+      emit_call_insn (gen_sibcall_internal (rx_load_function_descriptor (operands[0], savereg)));
+      emit_move_insn (picreg, savereg);
     }
   DONE;
 })
@@ -3133,17 +3167,15 @@
     {
       rtx gotsym;
       rtx picreg = rx_get_fdpic_reg_initial_val();
+      rtx savereg = gen_reg_rtx(Pmode);
       rtx t = !can_create_pseudo_p ()
 	      ? operands[1] : gen_reg_rtx (GET_MODE (operands[1]));
       emit_move_insn (picreg, rx_get_fdpic_reg_initial_val ());
       gotsym = gen_sym2GOTFUNCDESC (operands[1]);
       PUT_MODE (gotsym, Pmode);
-      emit_move_insn(picreg, gen_rtx_PLUS(Pmode, picreg, gotsym));
-      emit_move_insn(t, gen_rtx_MEM(Pmode, picreg));
-      emit_move_insn(picreg, gen_rtx_MEM(Pmode,
-                                         plus_constant(Pmode, picreg, 4)));
       emit_call_insn (gen_sibcall_value_internal (operands[0],
-						  rx_load_function_descriptor (operands[0])));
+						  rx_load_function_descriptor (operands[0], savereg)));
+      emit_move_insn(picreg, savereg);
     }
   DONE;
 })
@@ -3164,4 +3196,13 @@
   [(const:SI (unspec:SI [(match_operand:SI 0)] UNSPEC_PCLOC))]
   ""
   ""
+)
+
+(define_insn "set_got"
+  [(set (match_operand:SI 0 "register_operand" "+r,r")
+        (unspec:SI [(match_dup 0)
+                    (match_operand:SI 1 "nonimmediate_operand" "r,m")]
+                   UNSPEC_PIC_RESTORE))]
+  ""
+  "mov.L\t%1, %0"
 )
