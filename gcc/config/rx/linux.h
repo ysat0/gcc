@@ -115,6 +115,18 @@
 #undef TEXT_SECTION_ASM_OP
 #define TEXT_SECTION_ASM_OP	      \
   "\t.section .text,\"ax\""
+#undef CTORS_SECTION_ASM_OP
+#define CTORS_SECTION_ASM_OP	      \
+  "\t.section\t.init_array,\"aw\",@init_array"
+#undef DTORS_SECTION_ASM_OP
+#define DTORS_SECTION_ASM_OP	      \
+  "\t.section\t.fini_array,\"aw\",@fini_array"
+#undef INIT_ARRAY_SECTION_ASM_OP
+#define INIT_ARRAY_SECTION_ASM_OP   \
+  "\t.section\t.init_array,\"aw\",@init_array"
+#undef FINI_ARRAY_SECTION_ASM_OP
+#define FINI_ARRAY_SECTION_ASM_OP   \
+  "\t.section\t.fini_array,\"aw\",@fini_array"
 
 #undef GLOBAL_ASM_OP
 #define GLOBAL_ASM_OP		"\t.global\t"
