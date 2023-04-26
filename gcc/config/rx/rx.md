@@ -969,11 +969,25 @@
 		 (match_operand:SI 2 "rx_source_operand" "")))
     (clobber (reg:CC CC_REG))])]
   ""
-  "
+{
+  if (flag_pic)
+    {
+      if (GET_CODE(operands[2]) == LABEL_REF)
+        {
+	  rtx label = gen_pcloc(operands[2]);
+	  rtx t = gen_reg_rtx (GET_MODE(operands[2]));
+	  emit_insn (gen_mvfc(t, GEN_INT (CTRLREG_PC)));
+	  emit_insn(gen_addsi3(t, t, label));
+	  operands[2] = t;
+	}
+    }
+  else
+    {
       operands[0] = rx_maybe_pidify_operand (operands[0], 1);
       operands[1] = rx_maybe_pidify_operand (operands[1], 1);
       operands[2] = rx_maybe_pidify_operand (operands[2], 1);
-  "
+   }
+}
 )
 
 (define_insn "addsi3_internal"
@@ -3168,8 +3182,6 @@
       rtx gotsym;
       rtx picreg = rx_get_fdpic_reg_initial_val();
       rtx savereg = gen_reg_rtx(Pmode);
-      rtx t = !can_create_pseudo_p ()
-	      ? operands[1] : gen_reg_rtx (GET_MODE (operands[1]));
       emit_move_insn (picreg, rx_get_fdpic_reg_initial_val ());
       gotsym = gen_sym2GOTFUNCDESC (operands[1]);
       PUT_MODE (gotsym, Pmode);
