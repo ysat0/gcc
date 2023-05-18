@@ -656,3 +656,5 @@ int rx_legitimate_pic_operand_p(rtx x);
 #define SYMBOLIC_CONST_P(X)	\
 ((GET_CODE (X) == SYMBOL_REF || GET_CODE (X) == LABEL_REF)	\
   && nonpic_symbol_mentioned_p (X))
+
+#define PIC_CASE_VECTOR_ADDRESS(index) rx_pic_vector_address(index)

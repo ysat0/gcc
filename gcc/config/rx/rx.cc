@@ -219,10 +219,10 @@ legitimize_pic_address (rtx orig, machine_mode mode ATTRIBUTE_UNUSED, rtx reg)
       rtx label = XEXP (orig, 1);
       if (reg == NULL_RTX)
 	reg = gen_reg_rtx(Pmode);
-      emit_insn(gen_mvfc(reg, GEN_INT (CTRLREG_PC)));
+      emit_insn(gen_load_pc_location(reg, GEN_INT (CTRLREG_PC)));
       if (GET_CODE (orig) == PLUS)
 	{
-	  label = gen_pcloc(label);
+	  label = gen_pcrel_label(label);
 	  XEXP (orig, 1) = XEXP (orig, 0);
 	  XEXP (orig, 0) = gen_rtx_PLUS(Pmode, reg, label);
 	}
@@ -358,7 +358,7 @@ nonpic_symbol_mentioned_p (rtx x)
 	  || XINT (x, 1) == UNSPEC_PLT
 	  || XINT (x, 1) == UNSPEC_GOTFUNCDESC
 	  || XINT (x, 1) == UNSPEC_GOTOFFFUNCDESC
-	  || XINT (x, 1) == UNSPEC_PCLOC))
+	  || XINT (x, 1) == UNSPEC_PCREL))
     return false;
 
   const char* fmt = GET_RTX_FORMAT (GET_CODE (x));
@@ -580,13 +580,13 @@ rx_print_operand_address (FILE * file, machine_mode /*mode*/, rtx addr)
           ATTR_STR(GOTOFF)
           ATTR_STR(GOTFUNCDESC)
           ATTR_STR(GOTOFFFUNCDESC)
-	  case UNSPEC_PCLOC:
+	  case UNSPEC_PCREL:
 	    fprintf (file, "#");
 	  if (SYMBOL_REF_P(addr))
 	      output_addr_const (file, addr);
 	    else
 	      output_addr_const (file, XEXP(addr, 0));
-	    fprintf (file, " - . + 3");
+	    fprintf (file, " - 1b");
 	    return;
 	  }
 	if (attr)
@@ -3104,7 +3104,7 @@ rx_is_legitimate_constant (machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 		 XINT (x, 1) == UNSPEC_GOTFUNCDESC ||
 		 XINT (x, 1) == UNSPEC_GOTOFFFUNCDESC ||
 		 XINT (x, 1) == UNSPEC_PLT ||
-		 XINT (x, 1) == UNSPEC_PCLOC;
+		 XINT (x, 1) == UNSPEC_PCREL;
 
 	default:
 	  /* FIXME: Can this ever happen ?  */
@@ -3859,11 +3859,9 @@ rx_mov_pic_operands (rtx x)
 	}
       else
 	{
-	  // mvfc pc, reg
-	  // add #symbol - . + 3, reg
-	  rtx label = gen_pcloc(x);
+	  rtx label = gen_pcrel_label(x);
 	  t = gen_reg_rtx (GET_MODE(x));
-	  emit_insn(gen_mvfc(t, GEN_INT (CTRLREG_PC)));
+	  emit_insn(gen_load_pc_location(t, GEN_INT(CTRLREG_PC)));
 	  emit_insn(gen_addsi3(t, t, label));
 	  return t;
 	}
@@ -3906,7 +3904,7 @@ rx_asm_output_addr_const_extra (FILE *file, rtx x)
     {
       switch (XINT (x, 1))
 	{
-	case UNSPEC_PCLOC:
+	case UNSPEC_PCREL:
 	  output_addr_const (file, XVECEXP (x, 0, 0));
 	  break;
 	default:
@@ -3923,6 +3921,24 @@ rx_const_not_ok_for_debug_p (rtx p)
 {
   return (GET_CODE (p) == SYMBOL_REF);
 }
+
+rtx rx_pic_vector_address(rtx index)
+{
+  rtx base = gen_reg_rtx(SImode);
+  rtx label = gen_pcrel_label(XEXP(index, 1));
+
+  emit_insn(gen_load_pc_location(base, GEN_INT(1)));
+  XEXP(index, 1) = gen_rtx_PLUS(SImode, base, label);
+  return index;
+}
+
+bool
+rx_cannot_force_const_mem_p (machine_mode mode ATTRIBUTE_UNUSED,
+			     rtx x ATTRIBUTE_UNUSED)
+{
+  return flag_pic;
+}
+
 
 #undef  TARGET_NARROW_VOLATILE_BITFIELD
 #define TARGET_NARROW_VOLATILE_BITFIELD		rx_narrow_volatile_bitfield
@@ -4087,6 +4103,9 @@ rx_const_not_ok_for_debug_p (rtx p)
 
 #undef TARGET_CONST_NOT_OK_FOR_DEBUG_P
 #define TARGET_CONST_NOT_OK_FOR_DEBUG_P rx_const_not_ok_for_debug_p
+
+#undef TARGET_CANNOT_FORCE_CONST_MEM
+#define TARGET_CANNOT_FORCE_CONST_MEM rx_cannot_force_const_mem_p
 
 struct gcc_target targetm = TARGET_INITIALIZER;
 

@@ -84,8 +84,9 @@
    (UNSPEC_PLT		   63)
    (UNSPEC_GOTFUNCDESC     64)
    (UNSPEC_GOTOFFFUNCDESC  65)
-   (UNSPEC_PCLOC           66)
+   (UNSPEC_PCREL           66)
    (UNSPEC_PIC_RESTORE     67)
+   (UNSPEC_PC_LOCATION     68)
 
    (CTRLREG_PSW		    0)
    (CTRLREG_PC		    1)
@@ -970,23 +971,9 @@
     (clobber (reg:CC CC_REG))])]
   ""
 {
-  if (flag_pic)
-    {
-      if (GET_CODE(operands[2]) == LABEL_REF)
-        {
-	  rtx label = gen_pcloc(operands[2]);
-	  rtx t = gen_reg_rtx (GET_MODE(operands[2]));
-	  emit_insn (gen_mvfc(t, GEN_INT (CTRLREG_PC)));
-	  emit_insn(gen_addsi3(t, t, label));
-	  operands[2] = t;
-	}
-    }
-  else
-    {
-      operands[0] = rx_maybe_pidify_operand (operands[0], 1);
-      operands[1] = rx_maybe_pidify_operand (operands[1], 1);
-      operands[2] = rx_maybe_pidify_operand (operands[2], 1);
-   }
+  operands[0] = rx_maybe_pidify_operand (operands[0], 1);
+  operands[1] = rx_maybe_pidify_operand (operands[1], 1);
+  operands[2] = rx_maybe_pidify_operand (operands[2], 1);
 }
 )
 
@@ -3204,8 +3191,8 @@
    (set_attr "timings" "33")]
 )
 
-(define_expand "pcloc"
-  [(const:SI (unspec:SI [(match_operand:SI 0)] UNSPEC_PCLOC))]
+(define_expand "pcrel_label"
+  [(const:SI (unspec:SI [(match_operand:SI 0)] UNSPEC_PCREL))]
   ""
   ""
 )
@@ -3217,4 +3204,12 @@
                    UNSPEC_PIC_RESTORE))]
   ""
   "mov.L\t%1, %0"
+)
+
+(define_insn "load_pc_location"
+  [(set (match_operand:SI             0 "register_operand" "=r")
+	(unspec_volatile:SI [(match_operand:SI 1 "immediate_operand" "i")]
+		   UNSPEC_PC_LOCATION))]
+  ""
+  "\n1:\tmvfc\t%C1, %0"
 )

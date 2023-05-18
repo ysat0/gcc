@@ -177,5 +177,6 @@ rtx legitimize_pic_address (rtx orig,
 rtx rx_get_fdpic_reg_initial_val (void);
 rtx rx_load_function_descriptor (rtx sym, rtx savereg);
 rtx rx_mov_pic_operands(rtx x);
+rtx rx_pic_vector_address(rtx index);
 
 #endif /* GCC_RX_PROTOS_H */
