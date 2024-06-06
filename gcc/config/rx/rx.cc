@@ -210,7 +210,7 @@ legitimize_pic_address (rtx orig, machine_mode mode ATTRIBUTE_UNUSED, rtx reg)
 	  SYMBOL_REF_FUNCTION_P (orig) && SYMBOL_REF_EXTERNAL_P(orig))
 	emit_insn (gen_symGOTFUNCDESC2reg (reg, orig));
       else
-	emit_insn (gen_symGOTOFF2reg (reg, orig));
+	emit_insn (gen_symGOT2reg (reg, orig));
       crtl->uses_pic_offset_table = 1;
       return reg;
     }
