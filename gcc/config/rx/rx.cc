@@ -3813,16 +3813,25 @@ rx_load_function_descriptor (rtx sym, rtx savereg)
   rtx gotsym = gen_sym2GOTFUNCDESC (sym);
   rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
   rtx func = gen_reg_rtx (GET_MODE (sym));
-  rtx got = gen_rtx_MEM(Pmode, plus_constant(Pmode, picreg, 4));
+  rtx got;
   rtx tmp = gen_reg_rtx(Pmode);
 
   emit_move_insn (picreg, rx_get_fdpic_reg_initial_val ());
   PUT_MODE (gotsym, Pmode);
   emit_move_insn (savereg,  picreg);
-  emit_move_insn(tmp, gen_rtx_MEM(Pmode, gotsym));
-  emit_move_insn(picreg, gen_rtx_PLUS(Pmode, picreg, tmp));
-  emit_move_insn(func, gen_rtx_MEM(Pmode, picreg));
-  emit_insn(gen_set_got(picreg, got));
+  if (SYMBOL_REF_P(sym))
+    {
+      got = gen_rtx_MEM(Pmode, plus_constant(Pmode, picreg, 4));
+      emit_move_insn(tmp, gen_rtx_MEM(Pmode, gotsym));
+      emit_move_insn(picreg, gen_rtx_PLUS(Pmode, picreg, tmp));
+      emit_move_insn(func, gen_rtx_MEM(Pmode, picreg));
+      emit_insn(gen_set_got(picreg, got));
+    }
+  else
+    {
+      emit_move_insn(func, gen_rtx_MEM(Pmode, sym));
+      emit_move_insn(picreg, gen_rtx_MEM(Pmode, plus_constant(Pmode, sym, 4)));
+    }
 
   return func;
 }
