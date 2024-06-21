@@ -443,7 +443,7 @@
 {
   rtx dest = XEXP (operands[0], 0);
 
-  if (!TARGET_FDPIC || (SYMBOL_REF_P(dest) && SYMBOL_REF_LOCAL_P(dest)))
+  if (!TARGET_FDPIC)
     {
       if (! rx_call_operand (dest, Pmode))
         dest = force_reg (Pmode, dest);
@@ -2985,29 +2985,29 @@
   rtx savereg = gen_reg_rtx(Pmode);
   rtx dest = XEXP (operands[0], 0);
 
-  if (SYMBOL_REF_P(dest))
+  if (SYMBOL_REF_P(dest) && SYMBOL_REF_LOCAL_P(dest))
     {
-      if (!SYMBOL_REF_LOCAL_P(dest))
-        {
-          dest = rx_load_function_descriptor(dest, savereg);
-          emit_call_insn (gen_call_internal_plt (dest));
-	}
-      else
-        {
-	  if (! rx_call_operand (dest, Pmode))
-            dest = force_reg (Pmode, dest);
-          emit_call_insn (gen_call_internal_local (dest));
-	  DONE;
-	}
+      if (! rx_call_operand (dest, Pmode))
+        dest = force_reg (Pmode, dest);
+      emit_call_insn (gen_call_internal (dest));
     }
   else
     {
-      emit_move_insn(savereg, picreg);
-      emit_move_insn(picreg, gen_rtx_MEM(Pmode, plus_constant(Pmode, dest, 4)));
-      emit_move_insn(dest, gen_rtx_MEM(Pmode, dest));
-      emit_call_insn (gen_call_internal_fd (dest));
+      if (SYMBOL_REF_P(dest))
+        {
+          dest = rx_load_function_descriptor(dest, savereg);
+          emit_call_insn (gen_call_internal_plt (dest));
+        }
+      else
+        {
+          emit_move_insn(savereg, picreg);
+          emit_move_insn(picreg, gen_rtx_MEM(Pmode,
+	  plus_constant(Pmode, dest, 4)));
+          emit_move_insn(dest, gen_rtx_MEM(Pmode, dest));
+          emit_call_insn (gen_call_internal_fd (dest));
+        }
+      emit_move_insn(picreg, savereg);
     }
-  emit_move_insn(picreg, savereg);
   DONE;
 })
 
@@ -3019,17 +3019,6 @@
   ""
   "jsr\t%A0"
   [(set_attr "length" "2")
-   (set_attr "timings" "33")]
-)
-
-(define_insn "call_internal_local"
-  [(call (mem:QI (match_operand:SI 0 "rx_symbolic_call_operand" ""))
-	 (const_int 0))
-   (use (reg:SI PIC_REG))
-   (clobber (reg:CC CC_REG))]
-  ""
-  "bsr\t%A0"
-  [(set_attr "length" "4")
    (set_attr "timings" "33")]
 )
 
@@ -3055,29 +3044,29 @@
   rtx savereg = gen_reg_rtx(Pmode);
   rtx dest = XEXP (operands[1], 0);
 
-  if (SYMBOL_REF_P(dest))
+  if (SYMBOL_REF_P(dest) && SYMBOL_REF_LOCAL_P(dest))
     {
-      if (!SYMBOL_REF_LOCAL_P(dest))
+      if (! rx_call_operand (dest, Pmode))
+        dest = force_reg (Pmode, dest);
+      emit_call_insn (gen_call_internal (dest));
+    }
+  else
+    {
+      if (SYMBOL_REF_P(dest))
         {
           dest = rx_load_function_descriptor(dest, savereg);
           emit_call_insn (gen_call_value_internal_plt (operands[0], dest));
 	}
       else
         {
-	  if (! rx_call_operand (dest, Pmode))
-            dest = force_reg (Pmode, dest);
-          emit_call_insn (gen_call_value_internal_local (operands[0], dest));
-	  DONE;
-	}
+          emit_insn(gen_movsi(savereg, picreg));
+          emit_move_insn(picreg, gen_rtx_MEM(Pmode,
+	                                     plus_constant(Pmode, dest, 4)));
+          emit_move_insn(dest, gen_rtx_MEM(Pmode, dest));
+          emit_call_insn (gen_call_value_internal_fd (operands[0], dest));
+       }
+       emit_move_insn(picreg, savereg);
     }
-  else
-    {
-      emit_insn(gen_movsi(savereg, picreg));
-      emit_move_insn(picreg, gen_rtx_MEM(Pmode, plus_constant(Pmode, dest, 4)));
-      emit_move_insn(dest, gen_rtx_MEM(Pmode, dest));
-      emit_call_insn (gen_call_value_internal_fd (operands[0], dest));
-    }
-  emit_move_insn(picreg, savereg);
   DONE;
 })
 
