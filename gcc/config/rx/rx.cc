@@ -582,11 +582,15 @@ rx_print_operand_address (FILE * file, machine_mode /*mode*/, rtx addr)
           ATTR_STR(GOTOFFFUNCDESC)
 	  case UNSPEC_PCREL:
 	    fprintf (file, "#");
-	  if (SYMBOL_REF_P(addr))
+	    if (SYMBOL_REF_P(addr))
 	      output_addr_const (file, addr);
 	    else
 	      output_addr_const (file, XEXP(addr, 0));
 	    fprintf (file, " - 1b");
+	    return;
+	  case UNSPEC_PLT:
+   	    output_addr_const (file, addr);
+	    fprintf(file, "@PLT");
 	    return;
 	  }
 	if (attr)
@@ -3037,7 +3041,7 @@ rx_warn_func_return (tree decl)
 static bool
 rx_function_ok_for_sibcall (tree decl, tree exp ATTRIBUTE_UNUSED)
 {
-  if (TARGET_JSR)
+  if (TARGET_JSR || TARGET_FDPIC)
     return false;
 
   /* Do not allow indirect tailcalls.  The
@@ -3808,7 +3812,7 @@ int rx_legitimate_pic_operand_p(rtx x)
    function descriptor) and the GOT address */
 
 rtx
-rx_load_function_descriptor (rtx sym, rtx savereg)
+rx_load_function_descriptor (rtx sym)
 {
   rtx gotsym = gen_sym2GOTFUNCDESC (sym);
   rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
@@ -3818,20 +3822,11 @@ rx_load_function_descriptor (rtx sym, rtx savereg)
 
   emit_move_insn (picreg, rx_get_fdpic_reg_initial_val ());
   PUT_MODE (gotsym, Pmode);
-  emit_move_insn (savereg,  picreg);
-  if (SYMBOL_REF_P(sym))
-    {
-      got = gen_rtx_MEM(Pmode, plus_constant(Pmode, picreg, 4));
-      emit_move_insn(tmp, gen_rtx_MEM(Pmode, gotsym));
-      emit_move_insn(picreg, gen_rtx_PLUS(Pmode, picreg, tmp));
-      emit_move_insn(func, gen_rtx_MEM(Pmode, picreg));
-      emit_insn(gen_set_got(picreg, got));
-    }
-  else
-    {
-      emit_move_insn(func, gen_rtx_MEM(Pmode, sym));
-      emit_move_insn(picreg, gen_rtx_MEM(Pmode, plus_constant(Pmode, sym, 4)));
-    }
+  got = gen_rtx_MEM(Pmode, plus_constant(Pmode, picreg, 4));
+  emit_move_insn(tmp, gen_rtx_MEM(Pmode, gotsym));
+  emit_move_insn(picreg, gen_rtx_PLUS(Pmode, picreg, tmp));
+  emit_move_insn(func, gen_rtx_MEM(Pmode, picreg));
+  emit_insn(gen_set_got(picreg, got));
 
   return func;
 }
