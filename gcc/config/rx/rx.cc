@@ -178,26 +178,29 @@ legitimize_pic_address (rtx orig, machine_mode mode ATTRIBUTE_UNUSED, rtx reg)
       if (reg == NULL_RTX)
 	reg = gen_reg_rtx (Pmode);
 
-      if (TARGET_FDPIC
-	  && GET_CODE (orig) == SYMBOL_REF && SYMBOL_REF_FUNCTION_P (orig))
+      if (TARGET_FDPIC)
 	{
-	  /* Weak functions may be NULL which doesn't work with
-	     GOTOFFFUNCDESC because the runtime offset is not known.  */
-	  if (SYMBOL_REF_WEAK (orig))
-	    emit_insn (gen_symGOTFUNCDESC2reg (reg, orig));
-	  else
-	    emit_insn (gen_symGOTOFFFUNCDESC2reg (reg, orig));
-	}
-      else if (TARGET_FDPIC
-	       && (GET_CODE (orig) == LABEL_REF
+	  if (GET_CODE (orig) == SYMBOL_REF && SYMBOL_REF_FUNCTION_P (orig))
+	    {
+	      /* Weak functions may be NULL which doesn't work with
+		 GOTOFFFUNCDESC because the runtime offset is not known.  */
+	      if (SYMBOL_REF_WEAK (orig))
+		emit_insn (gen_symGOTFUNCDESC2reg (reg, orig));
+	      else
+		emit_insn (gen_symGOTFUNCDESC2reg (reg, orig));
+	    }
+#if 0	  
+	  else if (GET_CODE (orig) == LABEL_REF
 		   || (GET_CODE (orig) == SYMBOL_REF && SYMBOL_REF_DECL (orig)
 		       && (TREE_READONLY (SYMBOL_REF_DECL (orig))
 			   || SYMBOL_REF_EXTERNAL_P (orig)
-			   || DECL_SECTION_NAME(SYMBOL_REF_DECL (orig))))))
-	/* In FDPIC, GOTOFF can only be used for writable data.  */
-	emit_insn (gen_symGOT2reg (reg, orig));
-      else
-	emit_insn (gen_symGOTOFF2reg (reg, orig));
+			   || DECL_SECTION_NAME(SYMBOL_REF_DECL (orig)))))
+#endif
+	  else if (GET_CODE (orig) == LABEL_REF)
+	    emit_insn (gen_symGOT2reg (reg, orig));
+	  else
+	    emit_insn (gen_symGOT2reg (reg, orig));
+	}
       crtl->uses_pic_offset_table = 1;
       return reg;
     }
@@ -214,7 +217,9 @@ legitimize_pic_address (rtx orig, machine_mode mode ATTRIBUTE_UNUSED, rtx reg)
       crtl->uses_pic_offset_table = 1;
       return reg;
     }
-  else if (MEM_P(orig) && GET_CODE (XEXP (orig, 1)) == LABEL_REF)
+  else if ((MEM_P(orig) && GET_CODE (XEXP (orig, 1)) == LABEL_REF) &&
+	   (GET_CODE (orig) == SYMBOL_REF && SYMBOL_REF_DECL (orig)
+	    && (TREE_READONLY (SYMBOL_REF_DECL (orig)))))  
     {
       rtx label = XEXP (orig, 1);
       if (reg == NULL_RTX)
@@ -328,6 +333,8 @@ rx_is_legitimate_address (machine_mode mode, rtx x,
 	      && CONST_INT_P (factor)
 	      && GET_MODE_SIZE (mode) == INTVAL (factor);
 	  }
+	case CONST:
+	  return GET_CODE (XEXP (index, 0)) == UNSPEC;
 
 	default:
 	  return false;
@@ -569,17 +576,25 @@ rx_print_operand_address (FILE * file, machine_mode /*mode*/, rtx addr)
       {
 	int post = XINT (addr, 1);
 	const char *attr = NULL;
+	bool immideate = false;
 	addr = XVECEXP (addr, 0, 0);
-	switch (post)
-	  {
 #define ATTR_STR(_name) \
   case UNSPEC_##_name: \
     attr = #_name; \
-    break;
-          ATTR_STR(GOT)
-          ATTR_STR(GOTOFF)
-          ATTR_STR(GOTFUNCDESC)
-          ATTR_STR(GOTOFFFUNCDESC)
+    break
+#define ATTR_STR_IMM(_name) \
+  case UNSPEC_##_name: \
+    attr = #_name; \
+    immideate = true; \
+    break
+
+	switch (post)
+	  {
+	    ATTR_STR(GOT);
+	    ATTR_STR(GOTFUNCDESC);
+	    ATTR_STR(PLT);
+	    ATTR_STR_IMM(GOTOFF);
+	    ATTR_STR_IMM(GOTOFFFUNCDESC);
 	  case UNSPEC_PCREL:
 	    fprintf (file, "#");
 	    if (SYMBOL_REF_P(addr))
@@ -588,16 +603,13 @@ rx_print_operand_address (FILE * file, machine_mode /*mode*/, rtx addr)
 	      output_addr_const (file, XEXP(addr, 0));
 	    fprintf (file, " - 1b");
 	    return;
-	  case UNSPEC_PLT:
-   	    output_addr_const (file, addr);
-	    fprintf(file, "@PLT");
-	    return;
 	  }
 	if (attr)
 	  {
 	    if (SYMBOL_REF_P(addr))
 	      {
-		fprintf (file, "#");
+		if (immideate)
+		  fprintf (file, "#");
 		output_addr_const (file, addr);
 		fprintf(file, "@%s", attr);
 	      }
@@ -3855,10 +3867,10 @@ rx_mov_pic_operands (rtx x)
       if (!RTX_FLAG (x, frame_related))
 	{
 	  if (TARGET_FDPIC && SYMBOL_REF_FUNCTION_P(x))
-	    // mov.L #symbol@GOTOFFFUNCDESC, reg
-	    funcsym = gen_sym2GOTOFFFUNCDESC (x);
+	    // #symbol@GOTFUNCDESC
+	    funcsym = gen_sym2GOTFUNCDESC (x);
 	  else
-	    // mov.L #symbol@GOT, reg
+	    // #symbol@GOTOFF
 	    gotsym = gen_sym2GOT (x);
 	}
       else
@@ -3874,15 +3886,21 @@ rx_mov_pic_operands (rtx x)
 	   (GET_CODE(XEXP(x, 0)) == PLUS || GET_CODE(XEXP(x, 0)) == MINUS) &&
 	   GET_CODE(XEXP(XEXP(x, 0), 0)) == SYMBOL_REF)
     {
-      // mov.L #symbol + const, reg
+      // mov.L symbol + const[PICREG], reg
       gotsym = gen_sym2GOT (XEXP(XEXP(x, 0), 0));
       const_p = GET_CODE(XEXP(x, 0)) == PLUS ? 1 : -1;
     }
   if (gotsym)
     {
-      t = gen_reg_rtx (GET_MODE(x));
-      emit_insn(gen_addsi3(t, picreg, gotsym));
-      emit_move_insn(t, gen_rtx_MEM(GET_MODE(x), t));
+      if (GET_CODE (x) == SYMBOL_REF && SYMBOL_REF_DECL (x)
+	  && (TREE_READONLY (SYMBOL_REF_DECL (x))))
+	{
+	  rtx reg = gen_reg_rtx(Pmode);
+	  rtx label = gen_pcrel_label(x);
+	  emit_insn(gen_load_pc_location(reg, GEN_INT (CTRLREG_PC)));
+	  return gen_rtx_PLUS(Pmode, reg, label);
+	}
+      t = gen_rtx_MEM(GET_MODE(x), gen_rtx_PLUS(Pmode, picreg, gotsym));
       crtl->uses_pic_offset_table = true;
       if (const_p > 0)
 	emit_move_insn(t, gen_rtx_PLUS(GET_MODE(x), t, XEXP(XEXP(x, 0), 1)));

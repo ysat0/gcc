@@ -617,7 +617,12 @@
         emit_insn (gen_addsi3 (operands[0], XEXP (operands[1], 0), XEXP (operands[1], 1)));
         DONE;
       }
-    if (CONST_INT_P (operand1)
+    if (GET_CODE(operands[1]) == MEM && GET_CODE(XEXP(operands[1], 0)) == PLUS
+	&& GET_CODE(XEXP(XEXP(operands[1], 0), 1)) == CONST
+	&& GET_CODE(XEXP(XEXP(XEXP(operands[1], 0), 1), 0)) == UNSPEC
+	&& XINT(XEXP(XEXP(XEXP(operands[1], 0), 1), 0), 1) == UNSPEC_GOTOFFFUNCDESC)
+      XINT(XEXP(XEXP(XEXP(operands[1], 0), 1), 0), 1) = UNSPEC_GOTFUNCDESC;
+    if (CONST_INT_P (operands[1])
         && ! rx_is_legitimate_constant (<register_modes:MODE>mode, operand1))
       FAIL;
   }
@@ -904,6 +909,18 @@
   operands[0] = rx_maybe_pidify_operand (operands[0], 1);
   operands[1] = rx_maybe_pidify_operand (operands[1], 1);
   operands[2] = rx_maybe_pidify_operand (operands[2], 1);
+  if (GET_CODE(operands[2]) == CONST &&
+      GET_CODE(XEXP(operands[2], 0)) == UNSPEC) {
+    switch (XINT(XEXP(operands[2], 0), 1))
+      {
+      case UNSPEC_GOT:
+        XINT(XEXP(operands[2], 0), 1) = UNSPEC_GOTOFF;
+	break;
+      case UNSPEC_GOTFUNCDESC:
+        XINT(XEXP(operands[2], 0), 1) = UNSPEC_GOTOFFFUNCDESC;
+	break;
+      }
+  }
 }
 )
 
@@ -3004,7 +3021,7 @@
       else
         {
           emit_move_insn(picreg, gen_rtx_MEM(Pmode,
-	  			 plus_constant(Pmode, dest, 4)));
+	  			             plus_constant(Pmode, dest, 4)));
           emit_move_insn(dest, gen_rtx_MEM(Pmode, dest));
           emit_call_insn (gen_call_internal_fd (dest));
         }
