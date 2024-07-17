@@ -600,15 +600,18 @@
 	(match_operand:register_modes 1 "general_operand"))]
   ""
   {
+    if (MEM_P (operands[0]) && MEM_P (operands[1]))
+      operands[1] = copy_to_mode_reg (<register_modes:MODE>mode, operands[1]);
     if (flag_pic)
       {
 	operands[0] = rx_mov_pic_operands(operands[0]);
 	operands[1] = rx_mov_pic_operands(operands[1]);
       }
-    if (MEM_P (operands[0]) && MEM_P (operands[1]))
-      operands[1] = copy_to_mode_reg (<register_modes:MODE>mode, operands[1]);
-    operands[0] = rx_maybe_pidify_operand (operands[0], 0);
-    operands[1] = rx_maybe_pidify_operand (operands[1], 0);
+    else
+      {
+	operands[0] = rx_maybe_pidify_operand (operands[0], 0);
+	operands[1] = rx_maybe_pidify_operand (operands[1], 0);
+      }
     if (GET_CODE (operands[0]) != REG
 	&& GET_CODE (operands[1]) == PLUS)
       operands[1] = copy_to_mode_reg (<register_modes:MODE>mode, operands[1]);
@@ -906,9 +909,18 @@
     (clobber (reg:CC CC_REG))])]
   ""
 {
-  operands[0] = rx_maybe_pidify_operand (operands[0], 1);
-  operands[1] = rx_maybe_pidify_operand (operands[1], 1);
-  operands[2] = rx_maybe_pidify_operand (operands[2], 1);
+  if (flag_pic)
+    {
+      operands[0] = rx_mov_pic_operands(operands[0]);
+      operands[1] = rx_mov_pic_operands(operands[1]);
+      operands[2] = rx_mov_pic_operands(operands[2]);
+    }
+  else
+    {
+      operands[0] = rx_maybe_pidify_operand (operands[0], 1);
+      operands[1] = rx_maybe_pidify_operand (operands[1], 1);
+      operands[2] = rx_maybe_pidify_operand (operands[2], 1);
+    }
   if (GET_CODE(operands[2]) == CONST &&
       GET_CODE(XEXP(operands[2], 0)) == UNSPEC) {
     switch (XINT(XEXP(operands[2], 0), 1))

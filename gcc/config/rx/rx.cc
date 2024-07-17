@@ -3859,7 +3859,7 @@ rx_mov_pic_operands (rtx x)
   rtx funcsym = NULL;
   rtx picreg = gen_rtx_REG (Pmode, PIC_REG);
   rtx t;
-  int const_p = 0;
+
   if (!can_create_pseudo_p ())
     return x;
   if (GET_CODE(x) == SYMBOL_REF)
@@ -3888,7 +3888,6 @@ rx_mov_pic_operands (rtx x)
     {
       // mov.L symbol + const[PICREG], reg
       gotsym = gen_sym2GOT (XEXP(XEXP(x, 0), 0));
-      const_p = GET_CODE(XEXP(x, 0)) == PLUS ? 1 : -1;
     }
   if (gotsym)
     {
@@ -3902,10 +3901,6 @@ rx_mov_pic_operands (rtx x)
 	}
       t = gen_rtx_MEM(GET_MODE(x), gen_rtx_PLUS(Pmode, picreg, gotsym));
       crtl->uses_pic_offset_table = true;
-      if (const_p > 0)
-	emit_move_insn(t, gen_rtx_PLUS(GET_MODE(x), t, XEXP(XEXP(x, 0), 1)));
-      else if (const_p < 0)
-	emit_move_insn(t, gen_rtx_MINUS(GET_MODE(x), t, XEXP(XEXP(x, 0), 1)));
       return t;
     }
   else if (funcsym)
