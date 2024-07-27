@@ -438,7 +438,9 @@
 (define_expand "call"
   [(call (match_operand:QI 0 "general_operand")
 	 (match_operand:SI 1 "general_operand"))
-	 (use (match_operand 2 "" ""))]
+	 (use (match_operand 2 "" ""))
+         (use (reg:SI PIC_REG))]
+
   ""
 {
   rtx dest = XEXP (operands[0], 0);
@@ -459,7 +461,9 @@
 (define_insn "call_internal"
   [(call (mem:QI (match_operand:SI 0 "rx_call_operand" "r,CALL_OP_SYMBOL_REF"))
 	 (const_int 0))
-   (clobber (reg:CC CC_REG))]
+   (clobber (reg:CC CC_REG))
+   (use (reg:SI PIC_REG))]
+
   ""
   "@
   jsr\t%0
@@ -472,7 +476,9 @@
   [(set (match_operand          0 "register_operand")
 	(call (match_operand:QI 1 "general_operand")
 	      (match_operand:SI 2 "general_operand")))
-	 (use (match_operand 3 "" ""))]
+	 (use (match_operand 3 "" ""))
+         (use (reg:SI PIC_REG))]
+
   ""
 {
   rtx dest = XEXP (operands[1], 0);
@@ -494,7 +500,9 @@
   [(set (match_operand                  0 "register_operand" "=r,r")
 	(call (mem:QI (match_operand:SI 1 "rx_call_operand"   "r,CALL_OP_SYMBOL_REF"))
 	      (const_int 0)))
-   (clobber (reg:CC CC_REG))]
+   (clobber (reg:CC CC_REG))
+   (use (reg:SI PIC_REG))]
+
   ""
   "@
   jsr\t%1
@@ -3011,7 +3019,8 @@
 (define_expand "call_fdpic"
   [(call (match_operand:QI 0 "general_operand")
 	 (match_operand:SI 1 "general_operand"))
-	 (use (match_operand 2 "" ""))]
+	 (use (match_operand 2 "" ""))
+         (use (reg:SI PIC_REG))]
   ""
 {
   rtx picreg = force_reg (Pmode, gen_rtx_REG(Pmode, PIC_REG));
@@ -3025,9 +3034,8 @@
     }
   else
     {
-      if (SYMBOL_REF_P(dest))
+      if (MEM_P(operands[0]) && SYMBOL_REF_P(dest))
         {
-          dest = gen_sym2PLT(dest);
           emit_call_insn (gen_call_internal_plt (dest));
         }
       else
@@ -3044,7 +3052,8 @@
 (define_insn "call_internal_fd"
   [(call (mem:QI (match_operand:SI 0 "rx_call_operand" "r"))
 	 (const_int 0))
-   (clobber (reg:CC CC_REG))]
+   (clobber (reg:CC CC_REG))
+   (use (reg:SI PIC_REG))]
   ""
   "jsr\t%A0"
   [(set_attr "length" "2")
@@ -3054,7 +3063,8 @@
 (define_insn "call_internal_plt"
   [(call (mem:QI (match_operand:SI 0 "" ""))
 	 (const_int 0))
-   (clobber (reg:CC CC_REG))]
+   (clobber (reg:CC CC_REG))
+   (use (reg:SI PIC_REG))]
   ""
   "bsr\t%A0"
   [(set_attr "length" "4")
@@ -3064,7 +3074,8 @@
 (define_expand "call_value_fdpic"
   [(call (match_operand:QI 0 "general_operand")
 	 (match_operand:SI 1 "general_operand"))
-	 (use (match_operand 2 "" ""))]
+	 (use (match_operand 2 "" ""))
+         (use (reg:SI PIC_REG))]
   ""
 {
   rtx picreg = force_reg (Pmode, gen_rtx_REG(Pmode, PIC_REG));
@@ -3078,10 +3089,9 @@
     }
   else
     {
-      if (SYMBOL_REF_P(dest))
+      if (MEM_P(operands[1]) && SYMBOL_REF_P(dest))
         {
-          dest = gen_sym2PLT(dest);
-          emit_call_insn (gen_call_value_internal_plt (operands[0], dest));
+	  emit_call_insn (gen_call_value_internal_plt (operands[0], dest));
 	}
       else
         {
@@ -3096,18 +3106,7 @@
 
 (define_insn "call_value_internal_plt"
   [(set (match_operand                  0 "register_operand" "=r")
-	(call (mem:QI (match_operand:SI 1 "" ""))
-	      (const_int 0)))
-   (clobber (reg:CC CC_REG))]
-  ""
-  "bsr\t%A1"
-  [(set_attr "length" "4")
-   (set_attr "timings" "33")]
-)
-
-(define_insn "call_value_internal_local"
-  [(set (match_operand                  0 "register_operand" "=r")
-	(call (mem:QI (match_operand:SI 1 "rx_symbolic_call_operand" ""))
+	(call (mem:QI (match_operand:SI 1 "rx_symbolic_call_operand" "CALL_OP_SYMBOL_REF"))
 	      (const_int 0)))
    (clobber (reg:CC CC_REG))]
   ""
@@ -3118,7 +3117,7 @@
 
 (define_insn "call_value_internal_fd"
   [(set (match_operand                  0 "register_operand" "=r")
-	(call (mem:QI (match_operand:SI 1 "rx_call_operand"   "r"))
+	(call (mem:QI (match_operand:SI 1 "register_operand"   "r"))
 	      (const_int 0)))
    (clobber (reg:CC CC_REG))]
   ""
