@@ -307,3 +307,8 @@
 (define_predicate "rshift_operator"
   (match_code "ashiftrt,lshiftrt")
 )
+
+(define_predicate "rx_plt_call_operand"
+  (match_code "const")
+)
+

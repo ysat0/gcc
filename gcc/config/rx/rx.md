@@ -3034,8 +3034,11 @@
     }
   else
     {
+      rtx savereg = gen_reg_rtx(Pmode);
+      emit_move_insn (savereg, picreg);
       if (MEM_P(operands[0]) && SYMBOL_REF_P(dest))
         {
+	  dest = gen_sym2PLT(dest);
           emit_call_insn (gen_call_internal_plt (dest));
         }
       else
@@ -3045,12 +3048,13 @@
           emit_move_insn(dest, gen_rtx_MEM(Pmode, dest));
           emit_call_insn (gen_call_internal_fd (dest));
         }
+      emit_move_insn (picreg, savereg);
     }
   DONE;
 })
 
 (define_insn "call_internal_fd"
-  [(call (mem:QI (match_operand:SI 0 "rx_call_operand" "r"))
+  [(call (mem:QI (match_operand:SI 0 "register_operand" "r"))
 	 (const_int 0))
    (clobber (reg:CC CC_REG))
    (use (reg:SI PIC_REG))]
@@ -3061,7 +3065,7 @@
 )
 
 (define_insn "call_internal_plt"
-  [(call (mem:QI (match_operand:SI 0 "" ""))
+  [(call (mem:QI (match_operand 0 "rx_plt_call_operand" ""))
 	 (const_int 0))
    (clobber (reg:CC CC_REG))
    (use (reg:SI PIC_REG))]
@@ -3089,6 +3093,8 @@
     }
   else
     {
+      rtx savereg = gen_reg_rtx(Pmode);
+      emit_move_insn (savereg, picreg);
       if (MEM_P(operands[1]) && SYMBOL_REF_P(dest))
         {
 	  emit_call_insn (gen_call_value_internal_plt (operands[0], dest));
@@ -3100,15 +3106,17 @@
           emit_move_insn(dest, gen_rtx_MEM(Pmode, dest));
           emit_call_insn (gen_call_value_internal_fd (operands[0], dest));
        }
+      emit_move_insn (picreg, savereg);
     }
   DONE;
 })
 
 (define_insn "call_value_internal_plt"
-  [(set (match_operand                  0 "register_operand" "=r")
-	(call (mem:QI (match_operand:SI 1 "rx_symbolic_call_operand" "CALL_OP_SYMBOL_REF"))
+  [(set (match_operand               0 "register_operand" "=r")
+	(call (mem:QI (match_operand 1 "rx_plt_call_operand" ""))
 	      (const_int 0)))
-   (clobber (reg:CC CC_REG))]
+   (clobber (reg:CC CC_REG))
+   (use (reg:SI PIC_REG))]
   ""
   "bsr\t%A1"
   [(set_attr "length" "4")
@@ -3119,7 +3127,8 @@
   [(set (match_operand                  0 "register_operand" "=r")
 	(call (mem:QI (match_operand:SI 1 "register_operand"   "r"))
 	      (const_int 0)))
-   (clobber (reg:CC CC_REG))]
+   (clobber (reg:CC CC_REG))
+   (use (reg:SI PIC_REG))]
   ""
   "jsr\t%1"
   [(set_attr "length" "2")
