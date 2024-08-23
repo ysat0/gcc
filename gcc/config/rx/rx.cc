@@ -646,6 +646,15 @@ rx_assemble_integer (rtx x, unsigned int size, int is_aligned)
 {
   const char *  op = integer_asm_op (size, is_aligned);
 
+    if (TARGET_FDPIC && size == UNITS_PER_WORD
+      && GET_CODE (x) == SYMBOL_REF && SYMBOL_REF_FUNCTION_P (x))
+    {
+      fputs (op, asm_out_file);
+      output_addr_const (asm_out_file, x);
+      fputs ("@FUNCDESC\n", asm_out_file);
+      return true;
+    }
+
   if (! CONST_INT_P (x))
     return default_assemble_integer (x, size, is_aligned);
 
