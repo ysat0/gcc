@@ -2856,7 +2856,14 @@ rx_elf_asm_cdtor (rtx symbol, int priority, bool is_ctor)
 
   switch_to_section (s);
   assemble_align (POINTER_SIZE);
-  assemble_integer (symbol, POINTER_SIZE / BITS_PER_UNIT, POINTER_SIZE, 1);
+  if (!TARGET_FDPIC)
+    assemble_integer (symbol, POINTER_SIZE / BITS_PER_UNIT, POINTER_SIZE, 1);
+  else
+    {
+      fputs ("\t.long\t", asm_out_file);
+      output_addr_const (asm_out_file, symbol);
+      fputs ("\n", asm_out_file);
+    }
 }
 
 static void
