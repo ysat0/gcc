@@ -611,7 +611,7 @@ rx_print_operand_address (FILE * file, machine_mode /*mode*/, rtx addr)
 		if (immideate)
 		  fprintf (file, "#");
 		output_addr_const (file, addr);
-		fprintf(file, "@%s", attr);
+		fprintf (file, "@%s", attr);
 	      }
 	    else
 	      rx_print_operand (file, addr, 0);
@@ -1160,7 +1160,6 @@ rx_gen_move_template (rtx * operands, bool is_movu)
       /* This mode is used by constants.  */
       break;
     default:
-      debug_rtx (src);
       gcc_unreachable ();
     }
 
@@ -1817,13 +1816,34 @@ add_pop_cfi_notes (rtx_insn *insn, unsigned int high, unsigned int low)
 {
   rtx src = stack_pointer_rtx;
   rtx t;
+  int frame = 0;
+
   for (unsigned int i = low; i <= high; i++)
     {
       add_reg_note (insn, REG_CFA_RESTORE, gen_rtx_REG (word_mode, i));
       if (i == FRAME_POINTER_REGNUM && frame_pointer_needed)
 	src = frame_pointer_rtx;
     }
-  t = plus_constant (Pmode, src, (high - low + 1) * UNITS_PER_WORD);
+  /* scan "add #frame, r0, r0" insn */
+  for (rtx_insn *t = get_insns(); t != insn; t = NEXT_INSN (t))
+    {
+      rtx p = PATTERN(t);
+      if (GET_CODE (p) == PARALLEL)
+	{
+	  for (unsigned int i = 0 ; i < (unsigned) XVECLEN (p, 0); i++)
+	    {
+	      rtx dst = XEXP(XVECEXP(p, 0, i), 0);
+	      rtx src = XEXP(XVECEXP(p, 0, i), 1);
+	      if (REG_P(dst) && REGNO(dst) == 0 &&
+		  GET_CODE(src) == PLUS &&
+		  REG_P(XEXP(src, 0)) && REGNO(XEXP(src, 0)) == 0)
+		{
+		  frame += XINT(XEXP(src, 1), 0);
+		}
+	    }
+	}
+    }
+  t = plus_constant (Pmode, src, (high - low + 1) * UNITS_PER_WORD + frame);
   t = gen_rtx_SET (stack_pointer_rtx, t);
   add_reg_note (insn, REG_CFA_ADJUST_CFA, t);
   RTX_FRAME_RELATED_P (insn) = 1;
